@@ -1,4 +1,50 @@
-# lyricGeter
+## 交互模式说明
+
+### 自动模式 (`--auto`)
+按权重自动选择最优结果：
+1. **格式优先**：逐字 > 行级同步 > 纯文本
+2. **相似度优先**：高相似度 > 低相似度
+3. **来源顺序**：网易云 > QQ音乐 > 酷狗 > syncedlyrics
+
+自动写入，无需确认，适合批量处理。
+
+### 交互模式（默认）
+**三步式选择流程**：
+
+#### 第一步：选择歌词来源
+显示所有找到的候选歌词：
+```
+找到 3 个候选歌词：
+
+1. netease - 逐字 (相似度: 95)
+2. kugou - 逐字 (相似度: 88)
+3. local - 行级同步
+跳过此文件
+退出程序
+```
+
+使用 ↑↓ 键选择，Enter 确认
+
+#### 第二步：预览歌词
+显示选中歌词的详细内容（前30行）
+- 时间戳高亮显示
+- 显示来源、格式、相似度
+- 支持逐字、翻译等完整信息
+
+#### 第三步：操作确认
+```
+接受并写入    - 直接写入此歌词
+返回重新选择  - 返回第一步，选择其他候选
+手动编辑后写入 - 在编辑器中修改后写入
+跳过此文件    - 不写入，继续下一个
+退出程序      - 终止处理
+```
+
+### 非交互式环境
+在 CI、脚本、重定向输入等环境下：
+- 自动检测非交互式环境（`sys.stdin.isatty()`）
+- 自动选择最优结果，无需手动确认
+- 避免 questionary 崩溃问题# lyricGeter
 
 为本地音乐库批量添加高质量同步歌词的 Python CLI 工具。
 
@@ -53,19 +99,44 @@ python main.py song.mp3 --dry-run
 
 ## 使用示例
 
+### 基础用法
 ```bash
-# 仅从网易云获取
-python main.py song.mp3 --source netease
+# 处理单个文件（交互模式，可选择多个候选）
+python main.py song.mp3
 
-# 使用 Musixmatch 获取翻译（需要 API key）
-export MUSIXMATCH_TOKEN="your_token_here"
-python main.py song.mp3 --source musixmatch --lang zh
+# 处理整个目录
+python main.py ~/Music/
 
+# 自动模式（跳过交互，自动选择最优结果）
+python main.py song.mp3 --auto
+
+# 预览模式（不写入，查看搜索结果）
+python main.py song.mp3 --dry-run
+```
+
+### 平台控制
+```bash
+# 只使用网易云
+python main.py song.mp3 --no-kugou
+
+# 只使用酷狗
+python main.py song.mp3 --no-netease
+
+# 禁用所有原生 API，仅使用 syncedlyrics
+python main.py song.mp3 --no-netease --no-kugou
+```
+
+### 高级选项
+```bash
 # 降低相似度阈值（匹配更宽松）
 python main.py song.mp3 --threshold 50
 
 # 优先使用本地歌词（仅当在线格式更优时才覆盖）
 python main.py song.mp3 --prefer-local
+
+# 使用 Musixmatch 获取翻译（需要 API key）
+export MUSIXMATCH_TOKEN="your_token_here"
+python main.py song.mp3 --source musixmatch --lang zh
 ```
 
 ## 工作流程
@@ -129,15 +200,15 @@ SPL（Salt Player Lyrics）是基于增强型 LRC 的格式，支持：
 
 | 选项 | 默认值 | 说明 |
 |-----|-------|------|
-| `--auto` | - | 自动接受最优结果，跳过交互确认 |
+| `--auto` | - | 自动选择最优结果（格式优先 > 相似度），跳过交互确认 |
 | `--dry-run` | - | 仅预览，不写入文件 |
 | `--source` | `all` | 歌词来源：`netease` / `lrclib` / `musixmatch` / `all` |
 | `--threshold` | `70.0` | 相似度阈值 (0-100)，用于网易云/酷狗 API 匹配 |
 | `--lang` | `zh` | 翻译语言代码（网易云、Musixmatch） |
 | `--prefer-local` | - | 优先使用本地歌词（默认优先在线） |
-| `--no-netease` | - | 禁用网易云 API（默认启用） |
-| `--no-kugou` | - | 禁用酷狗 API（默认启用） |
-| `--no-qqmusic` | - | 禁用 QQ 音乐 API（默认启用，当前无效） |
+| `--netease / --no-netease` | `--netease` | 启用/禁用网易云 API |
+| `--kugou / --no-kugou` | `--kugou` | 启用/禁用酷狗 API |
+| `--qqmusic / --no-qqmusic` | `--no-qqmusic` | 启用/禁用 QQ 音乐 API（当前无效） |
 
 ## 已支持的逐字歌词格式
 
