@@ -81,11 +81,13 @@
   - [ ] `converter.py`：QRC → SPL 转换
   - [ ] 测试：3DES 解密准确性
 
-- [ ] **恢复相似度过滤**
-  - [ ] 重构 `fetcher/base.py`：`LyricResult` 新增 `matched_title`, `matched_artist` 字段
-  - [ ] 修改 `matcher.py`：计算标题+艺术家相似度（`rapidfuzz.fuzz.WRatio`）
-  - [ ] 阈值默认 70 分，CLI 参数 `--threshold` 可配置
-  - [ ] 日志输出匹配得分，便于调试
+- [x] **恢复相似度过滤** ✅ **已完成 2026-07-03**
+  - [x] 重构 `fetcher/base.py`：`LyricResult` 新增 `matched_title`, `matched_artist` 字段
+  - [x] 修改网易云和酷狗 fetcher 返回匹配歌曲信息
+  - [x] 修改 `matcher.py`：计算标题+艺术家相似度（`rapidfuzz.fuzz.WRatio`）
+  - [x] 阈值默认 70 分（`DEFAULT_THRESHOLD`）
+  - [x] 原生 API 启用过滤，syncedlyrics 等第三方库信任其内部排序
+  - [x] 测试：`test_similarity.py` 验证过滤逻辑
 
 #### 公共任务
 
