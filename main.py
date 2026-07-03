@@ -19,7 +19,7 @@ from fetcher.kugou import KugouFetcher
 from fetcher.qqmusic import QQMusicFetcher
 from fetcher.base import LyricFormat, LyricResult
 from scanner import scan, TrackInfo
-from matcher import find_best
+from matcher import find_best, find_all
 from converter import to_spl
 from writer import write_spl
 from ui import confirm, console as ui_console
@@ -34,7 +34,7 @@ _PROVIDER_MAP = {
 err_console = Console(stderr=True, style="red", legacy_windows=False)
 
 
-def _fetch_result(
+def _fetch_results(
     track: TrackInfo,
     fetcher: SyncedLyricsFetcher,
     threshold: float,
@@ -42,10 +42,10 @@ def _fetch_result(
     use_netease: bool,
     use_kugou: bool,
     use_qqmusic: bool,
-) -> LyricResult | None:
-    """网络搜索阶段，在 Progress context 内调用。"""
+) -> list[LyricResult]:
+    """网络搜索阶段，返回所有候选结果。"""
     if not track.title:
-        return None
+        return []
     
     fetchers = []
     # 网易云 API 优先（支持逐字歌词）
@@ -60,7 +60,7 @@ def _fetch_result(
     # syncedlyrics 作为兜底
     fetchers.append(fetcher)
     
-    return find_best(track, fetchers, threshold=threshold, prefer_local=prefer_local)
+    return find_all(track, fetchers, threshold=threshold, prefer_local=prefer_local)
 
 
 @click.command()
@@ -77,9 +77,9 @@ def _fetch_result(
 @click.option("--threshold", type=float, default=70.0, show_default=True, help="相似度阈值 (0-100)")
 @click.option("--lang", default="zh", show_default=True, help="翻译语言代码，留空则不获取翻译")
 @click.option("--prefer-local", is_flag=True, help="优先使用本地内嵌歌词（默认优先在线）")
-@click.option("--no-netease", is_flag=True, help="禁用网易云 API（默认启用）")
-@click.option("--no-qqmusic", is_flag=True, help="禁用 QQ 音乐 API（默认启用）")
-@click.option("--no-kugou", is_flag=True, help="禁用酷狗 API（默认启用）")
+@click.option("--netease/--no-netease", default=True, show_default=True, help="启用/禁用网易云 API")
+@click.option("--kugou/--no-kugou", default=True, show_default=True, help="启用/禁用酷狗 API")
+@click.option("--qqmusic/--no-qqmusic", default=False, show_default=True, help="启用/禁用 QQ 音乐 API（当前无效）")
 def main(
     path: Path,
     auto: bool,
@@ -88,9 +88,9 @@ def main(
     threshold: float,
     lang: str,
     prefer_local: bool,
-    no_netease: bool,
-    no_qqmusic: bool,
-    no_kugou: bool,
+    netease: bool,
+    kugou: bool,
+    qqmusic: bool,
 ) -> None:
     """为本地音乐文件获取并写入 SPL 歌词。\n\nPATH 可以是单个音乐文件或目录。"""
     providers = _PROVIDER_MAP.get(source.lower())
@@ -104,7 +104,7 @@ def main(
     ui_console.print(f"\n[bold]共扫描到 {len(tracks)} 个文件[/]\n")
 
     # 阶段一：批量搜索（带进度条）
-    results: list[tuple[TrackInfo, LyricResult | None]] = []
+    results: list[tuple[TrackInfo, list[LyricResult]]] = []
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -118,34 +118,47 @@ def main(
             label = f"{track.artist} - {track.title}" if track.title else track.path.name
             progress.update(task, description=label)
             try:
-                result = _fetch_result(track, fetcher, threshold, prefer_local, use_netease=not no_netease, use_qqmusic=not no_qqmusic, use_kugou=not no_kugou)
+                candidates = _fetch_results(track, fetcher, threshold, prefer_local, use_netease=netease, use_kugou=kugou, use_qqmusic=qqmusic)
             except Exception as e:
-                result = None
+                candidates = []
                 ui_console.log(f"[red]搜索出错[/] {track.path.name}: {e}")
-            results.append((track, result))
+            results.append((track, candidates))
             progress.advance(task)
 
     ui_console.print()  # 空行分隔
 
     # 阶段二：逐文件交互确认
-    for track, result in results:
+    for track, candidates in results:
         label = track.path.name
         if not track.title:
             ui_console.print(f"[dim]{label}[/]  →  跳过（无元数据标题）")
             continue
-        if result is None:
+        if not candidates:
             ui_console.print(f"[dim]{label}[/]  →  未找到歌词")
             continue
 
-        spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+        # auto 模式：自动选择最优结果
+        if auto:
+            result = candidates[0]
+            spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+            
+            if not dry_run:
+                try:
+                    write_spl(track.path, spl, existing_lyric=track.embedded_lyric)
+                    ui_console.print(f"[green]✓[/] {label}  →  已写入 ({result.source_name}, {result.format.name})")
+                except Exception as e:
+                    ui_console.print(f"[red]写入失败[/] {label}: {e}")
+            else:
+                ui_console.print(f"[dim]{label}[/]  →  预览完成（dry-run）")
+            continue
 
+        # 非 auto 模式：展示多个候选，由用户选择
         try:
-            final_spl = confirm(
-                spl,
+            from ui import confirm_with_candidates
+            final_spl = confirm_with_candidates(
+                candidates,
                 track.title,
                 track.artist,
-                result,
-                auto=auto,
                 dry_run=dry_run,
             )
         except SystemExit:

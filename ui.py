@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 from fetcher.base import LyricFormat, LyricResult
+
+from converter import to_spl
 
 console = Console(legacy_windows=False)
 
@@ -74,6 +77,102 @@ def _open_editor(spl: str) -> str:
             pass
 
 
+def confirm_with_candidates(
+    candidates: list[LyricResult],
+    title: str,
+    artist: str,
+    *,
+    dry_run: bool = False,
+) -> str | None:
+    """
+    展示多个候选歌词，让用户选择。
+    
+    返回值：
+    - str  → 用户选择的 SPL 内容（可能经过编辑）
+    - None → 用户跳过此文件
+    - 抛出 SystemExit → 用户选择退出
+    """
+    if not candidates:
+        return None
+    
+    # 非交互式环境（如 CI、重定向输入）：直接返回最优候选
+    if not sys.stdin.isatty():
+        result = candidates[0]
+        spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+        _render_preview(spl, title, artist, result)
+        console.print("[dim]（非交互式环境，自动选择最优结果）[/]")
+        return spl if not dry_run else None
+    
+    # 第一步：选择候选
+    choices = []
+    for i, result in enumerate(candidates):
+        format_label = _FORMAT_LABEL[result.format]
+        score_text = f" (相似度: {result.score:.0f})" if result.score > 0 and result.score < 100 else ""
+        label = f"{i+1}. {result.source_name} - {Text.from_markup(format_label).plain}{score_text}"
+        choices.append(questionary.Choice(label, value=i))
+    
+    choices.append(questionary.Choice("跳过此文件", value="skip"))
+    choices.append(questionary.Choice("退出程序", value="quit"))
+    
+    console.print(f"\n[bold]{title}[/]" + (f" — [dim]{artist}[/]" if artist else ""))
+    console.print(f"找到 {len(candidates)} 个候选歌词：\n")
+    
+    try:
+        selection = questionary.select(
+            "选择歌词来源：",
+            choices=choices,
+        ).ask()
+    except Exception as e:
+        # questionary 在某些环境下可能失败，回退到简单输入
+        console.print(f"[yellow]交互菜单不可用: {e}[/]")
+        console.print("[dim]自动选择最优结果[/]")
+        selection = 0
+    
+    if selection is None or selection == "quit":
+        raise SystemExit(0)
+    if selection == "skip":
+        return None
+    
+    # 第二步：预览并确认
+    result = candidates[selection]
+    spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+    
+    _render_preview(spl, title, artist, result)
+    
+    if dry_run:
+        console.print("[dim]（dry-run 模式，不写入）[/]")
+        return None
+    
+    # 第三步：操作选择
+    try:
+        action = questionary.select(
+            "操作：",
+            choices=[
+                questionary.Choice("接受并写入", value="accept"),
+                questionary.Choice("返回重新选择", value="back"),
+                questionary.Choice("手动编辑后写入", value="edit"),
+                questionary.Choice("跳过此文件", value="skip"),
+                questionary.Choice("退出程序", value="quit"),
+            ],
+        ).ask()
+    except Exception:
+        # 非交互式环境，自动接受
+        console.print("[dim]（非交互式环境，自动接受）[/]")
+        action = "accept"
+    
+    if action is None or action == "quit":
+        raise SystemExit(0)
+    if action == "skip":
+        return None
+    if action == "back":
+        # 递归调用，让用户重新选择
+        return confirm_with_candidates(candidates, title, artist, dry_run=dry_run)
+    if action == "edit":
+        edited = _open_editor(spl)
+        return edited if edited.strip() else None
+    return spl  # accept
+
+
 def confirm(
     spl: str,
     title: str,
@@ -84,8 +183,8 @@ def confirm(
     dry_run: bool = False,
 ) -> str | None:
     """
-    展示 SPL 预览并请用户确认。
-
+    展示 SPL 预览并请用户确认。（旧版单候选接口，保留向后兼容）
+    
     返回值：
     - str  → 用户接受的 SPL 内容（可能经过编辑）
     - None → 用户跳过此文件
