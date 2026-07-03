@@ -13,6 +13,17 @@ class LyricFormat(IntEnum):
 
 
 @dataclass
+class SongCandidate:
+    source_name: str
+    source_id: str
+    title: str
+    artist: str
+    album: str = ""
+    duration_ms: int = 0
+    payload: dict = field(default_factory=dict)
+
+
+@dataclass
 class LyricResult:
     content: str | dict              # 主歌词（LRC/纯文本）或解析后的字典（KRC）
     format: LyricFormat
@@ -29,3 +40,11 @@ class LyricsFetcher(ABC):
     @abstractmethod
     def search(self, title: str, artist: str) -> LyricResult | None:
         """搜索歌词，失败返回 None。"""
+
+    def search_songs(self, query: str, limit: int = 10) -> list[SongCandidate]:
+        """搜索平台歌曲候选，供交互式手动选择。"""
+        return []
+
+    def fetch_by_song(self, song: SongCandidate) -> LyricResult | None:
+        """按用户选中的平台歌曲获取歌词。"""
+        return None

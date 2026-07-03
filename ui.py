@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,56 @@ _FORMAT_LABEL = {
     LyricFormat.LINE: "[bold cyan]行级同步[/]",
     LyricFormat.PLAIN: "[yellow]纯文本[/]",
 }
+_TIMESTAMP_LINE_RE = re.compile(r"^\s*\[\d{1,3}:\d{1,2}[.:]\d{1,6}\]")
+MIN_LYRIC_LINES = 5
+CLEAR_LYRICS = "__CLEAR_LYRICS__"
+SEARCH_AGAIN = "__SEARCH_AGAIN__"
+
+
+def _line_has_timestamp(line: str) -> bool:
+    return bool(_TIMESTAMP_LINE_RE.match(line))
+
+
+def summarize_spl(spl: str, *, translation_hint: bool = False) -> tuple[int, bool]:
+    """返回主歌词行数和是否带翻译。"""
+    non_empty_lines = [line.strip() for line in spl.splitlines() if line.strip()]
+    timed_indices = [i for i, line in enumerate(non_empty_lines) if _line_has_timestamp(line)]
+
+    if timed_indices:
+        line_count = len(timed_indices)
+        has_translation = translation_hint or any(
+            i > 0 and _line_has_timestamp(non_empty_lines[i - 1])
+            for i, line in enumerate(non_empty_lines)
+            if not _line_has_timestamp(line)
+        )
+    else:
+        line_count = len(non_empty_lines)
+        has_translation = translation_hint
+
+    return line_count, has_translation
+
+
+def result_to_spl(result: LyricResult) -> str:
+    spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+    return spl if isinstance(spl, str) else str(spl)
+
+
+def summarize_result(result: LyricResult) -> tuple[int, bool, str]:
+    spl = result_to_spl(result)
+    line_count, has_translation = summarize_spl(
+        spl,
+        translation_hint=bool(result.translation),
+    )
+    return line_count, has_translation, spl
+
+
+def _candidate_label(result: LyricResult, index: int | None = None) -> str:
+    line_count, has_translation, _ = summarize_result(result)
+    format_text = Text.from_markup(_FORMAT_LABEL[result.format]).plain
+    score_text = f" 相似度:{result.score:.0f}" if result.score > 0 and result.score < 100 else ""
+    translation_text = "有翻译" if has_translation else "无翻译"
+    prefix = f"{index}. " if index is not None else ""
+    return f"{prefix}{result.source_name} - {format_text} {line_count}行 {translation_text}{score_text}"
 
 
 def _render_preview(spl: str, title: str, artist: str, result: LyricResult) -> None:
@@ -32,6 +83,8 @@ def _render_preview(spl: str, title: str, artist: str, result: LyricResult) -> N
         header.append(f"  —  {artist}", style="dim")
     header.append(f"\n来源: {result.source_name}  ", style="dim")
     header.append_text(Text.from_markup(_FORMAT_LABEL[result.format]))
+    line_count, has_translation = summarize_spl(spl, translation_hint=bool(result.translation))
+    header.append(f"  {line_count}行  {'有翻译' if has_translation else '无翻译'}", style="dim")
     if result.score > 0:
         header.append(f"  相似度: {result.score:.0f}", style="dim")
 
@@ -77,20 +130,12 @@ def _open_editor(spl: str) -> str:
             pass
 
 
-def _simple_select(prompt: str, choices: list[tuple[str, any]]) -> any:
-    """简单的文本选择菜单，用于 questionary 不可用时的回退。
-    
-    Args:
-        prompt: 提示文本
-        choices: [(显示文本, 返回值), ...]
-    
-    Returns:
-        用户选择的值，或 None（用户输入无效）
-    """
+def _simple_select(prompt: str, choices: list[tuple[str, object]]) -> object:
+    """简单的文本选择菜单，用于 questionary 不可用时的回退。"""
     console.print(f"\n[bold]{prompt}[/]")
     for i, (label, _) in enumerate(choices, 1):
         console.print(f"  {i}. {label}")
-    
+
     try:
         user_input = input("\n请输入选项编号: ").strip()
         idx = int(user_input) - 1
@@ -110,42 +155,46 @@ def confirm_with_candidates(
 ) -> str | None:
     """
     展示多个候选歌词，让用户选择。
-    
+
     返回值：
     - str  → 用户选择的 SPL 内容（可能经过编辑）
+    - CLEAR_LYRICS → 用户选择按纯音乐处理，清除歌词标签
+    - SEARCH_AGAIN → 用户希望重新搜索并选择平台歌曲
     - None → 用户跳过此文件
     - 抛出 SystemExit → 用户选择退出
     """
     if not candidates:
         return None
-    
+
     # 非交互式环境（如 CI、重定向输入）：直接返回最优候选
     if not sys.stdin.isatty():
         result = candidates[0]
-        spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+        line_count, _, spl = summarize_result(result)
         _render_preview(spl, title, artist, result)
+        if line_count < MIN_LYRIC_LINES:
+            console.print("[dim]（非交互式环境，少于5行，按纯音乐处理）[/]")
+            return CLEAR_LYRICS
         console.print("[dim]（非交互式环境，自动选择最优结果）[/]")
-        return spl if not dry_run else None
-    
+        return spl
+
     console.print(f"\n[bold]{title}[/]" + (f" — [dim]{artist}[/]" if artist else ""))
     console.print(f"找到 {len(candidates)} 个候选歌词：\n")
-    
+
     # 尝试使用 questionary，失败则回退到简单文本输入
     use_questionary = sys.stdout.isatty()
-    
+
     while True:
         # 第一步：选择候选
         if use_questionary:
-            choices = []
-            for i, result in enumerate(candidates):
-                format_label = _FORMAT_LABEL[result.format]
-                score_text = f" (相似度: {result.score:.0f})" if result.score > 0 and result.score < 100 else ""
-                label = f"{i+1}. {result.source_name} - {Text.from_markup(format_label).plain}{score_text}"
-                choices.append(questionary.Choice(label, value=i))
-            
+            choices = [
+                questionary.Choice(_candidate_label(result, i + 1), value=i)
+                for i, result in enumerate(candidates)
+            ]
+            choices.append(questionary.Choice("再次搜索并选择歌曲", value="search_again"))
+            choices.append(questionary.Choice("按纯音乐处理（清除歌词标签）", value="instrumental"))
             choices.append(questionary.Choice("跳过此文件", value="skip"))
             choices.append(questionary.Choice("退出程序", value="quit"))
-            
+
             try:
                 selection = questionary.select(
                     "选择歌词来源：",
@@ -157,41 +206,47 @@ def confirm_with_candidates(
                 use_questionary = False
                 continue
         else:
-            # 简单文本选择
-            choices = []
-            for i, result in enumerate(candidates):
-                format_text = {LyricFormat.WORD: "逐字", LyricFormat.LINE: "行级同步", LyricFormat.PLAIN: "纯文本"}[result.format]
-                score_text = f" (相似度: {result.score:.0f})" if result.score > 0 and result.score < 100 else ""
-                label = f"{result.source_name} - {format_text}{score_text}"
-                choices.append((label, i))
-            
+            choices = [
+                (_candidate_label(result), i)
+                for i, result in enumerate(candidates)
+            ]
+            choices.append(("再次搜索并选择歌曲", "search_again"))
+            choices.append(("按纯音乐处理（清除歌词标签）", "instrumental"))
             choices.append(("跳过此文件", "skip"))
             choices.append(("退出程序", "quit"))
-            
+
             selection = _simple_select("选择歌词来源：", choices)
             if selection is None:
                 # 无法交互（如 EOFError），回退到自动模式
-                console.print("[dim]无法进行交互输入，自动选择最优结果[/]")
                 result = candidates[0]
-                spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+                line_count, _, spl = summarize_result(result)
+                if line_count < MIN_LYRIC_LINES:
+                    console.print("[dim]无法进行交互输入，少于5行，按纯音乐处理[/]")
+                    return CLEAR_LYRICS
+                console.print("[dim]无法进行交互输入，自动选择最优结果[/]")
                 _render_preview(spl, title, artist, result)
-                return spl if not dry_run else None
-        
+                return spl
+
         if selection is None or selection == "quit":
             raise SystemExit(0)
         if selection == "skip":
             return None
-        
+        if selection == "search_again":
+            return SEARCH_AGAIN
+        if selection == "instrumental":
+            console.print("[dim]已选择按纯音乐处理，将清除歌词标签[/]")
+            return CLEAR_LYRICS
+
         # 第二步：预览并确认
         result = candidates[selection]
-        spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
-        
+        _, _, spl = summarize_result(result)
+
         _render_preview(spl, title, artist, result)
-        
+
         if dry_run:
             console.print("[dim]（dry-run 模式，不写入）[/]")
-            return None
-        
+            return spl
+
         # 第三步：操作选择
         if use_questionary:
             try:
@@ -201,6 +256,8 @@ def confirm_with_candidates(
                         questionary.Choice("接受并写入", value="accept"),
                         questionary.Choice("返回重新选择", value="back"),
                         questionary.Choice("手动编辑后写入", value="edit"),
+                        questionary.Choice("再次搜索并选择歌曲", value="search_again"),
+                        questionary.Choice("按纯音乐处理（清除歌词标签）", value="instrumental"),
                         questionary.Choice("跳过此文件", value="skip"),
                         questionary.Choice("退出程序", value="quit"),
                     ],
@@ -213,6 +270,8 @@ def confirm_with_candidates(
                 ("接受并写入", "accept"),
                 ("返回重新选择", "back"),
                 ("手动编辑后写入", "edit"),
+                ("再次搜索并选择歌曲", "search_again"),
+                ("按纯音乐处理（清除歌词标签）", "instrumental"),
                 ("跳过此文件", "skip"),
                 ("退出程序", "quit"),
             ]
@@ -221,13 +280,17 @@ def confirm_with_candidates(
                 # 无法交互，默认接受
                 console.print("[dim]无法交互，自动接受[/]")
                 action = "accept"
-        
+
         if action is None or action == "quit":
             raise SystemExit(0)
         if action == "skip":
             return None
         if action == "back":
             continue  # 回到循环开始，重新选择
+        if action == "search_again":
+            return SEARCH_AGAIN
+        if action == "instrumental":
+            return CLEAR_LYRICS
         if action == "edit":
             edited = _open_editor(spl)
             return edited if edited.strip() else None
@@ -245,7 +308,7 @@ def confirm(
 ) -> str | None:
     """
     展示 SPL 预览并请用户确认。（旧版单候选接口，保留向后兼容）
-    
+
     返回值：
     - str  → 用户接受的 SPL 内容（可能经过编辑）
     - None → 用户跳过此文件

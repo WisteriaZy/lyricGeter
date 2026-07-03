@@ -14,14 +14,14 @@ from fetcher.base import LyricFormat
 MUSIC_EXTENSIONS = {".mp3", ".flac", ".ogg", ".m4a", ".opus"}
 
 # 逐字判断（与 fetcher/synced.py 保持一致）
-_WORD_LEVEL_RE = re.compile(r"\[\d+:\d+\.\d+\][^\[\]]+\[\d+:\d+\.\d+\]")
+_WORD_LEVEL_RE = re.compile(r"\[\d+:\d+[.:]\d+\][^\[\]]+\[\d+:\d+[.:]\d+\]")
 
 
 def _detect_format(text: str) -> LyricFormat:
     for line in text.splitlines():
         if _WORD_LEVEL_RE.search(line):
             return LyricFormat.WORD
-    if re.search(r"\[\d+:\d+\.\d+\]", text):
+    if re.search(r"\[\d+:\d+[.:]\d+\]", text):
         return LyricFormat.LINE
     return LyricFormat.PLAIN
 

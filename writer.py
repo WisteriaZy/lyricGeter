@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import mutagen
-from mutagen.id3 import ID3, USLT, Encoding
+from mutagen.id3 import ID3, ID3NoHeaderError, USLT, Encoding
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
 
@@ -54,3 +54,47 @@ def write_spl(path: Path, spl: str, existing_lyric: str | None = None) -> None:
             raise ValueError(f"不支持的文件格式: {path.suffix}")
         audio["lyrics"] = [spl]
         audio.save()
+
+
+def clear_lyrics(path: Path, existing_lyric: str | None = None) -> None:
+    """清除音频文件中的歌词标签。"""
+    if existing_lyric:
+        _backup_embedded(path, existing_lyric)
+
+    suffix = path.suffix.lower()
+
+    if suffix == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            return
+        tags.delall("USLT")
+        tags.save()
+        return
+
+    if suffix == ".flac":
+        audio = FLAC(path)
+        audio.pop("lyrics", None)
+        audio.pop("LYRICS", None)
+        audio.save()
+        return
+
+    if suffix in {".ogg", ".opus"}:
+        audio = OggVorbis(path)
+        audio.pop("lyrics", None)
+        audio.pop("LYRICS", None)
+        audio.save()
+        return
+
+    audio = mutagen.File(path)
+    if audio is None:
+        raise ValueError(f"不支持的文件格式: {path.suffix}")
+    try:
+        audio.pop("lyrics", None)
+        audio.pop("LYRICS", None)
+    except AttributeError:
+        if "lyrics" in audio:
+            del audio["lyrics"]
+        if "LYRICS" in audio:
+            del audio["LYRICS"]
+    audio.save()

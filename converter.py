@@ -10,9 +10,9 @@ from parser.netease_word import NetEaseWordLyricParser
 from parser.krc import KrcParser, LyricsLine as KrcLine
 
 # 匹配行首时间戳列表，如 [00:01.00][00:05.00]
-_STAMP_RE = re.compile(r"\[(\d+):(\d{1,2})\.(\d{1,6})\]")
+_STAMP_RE = re.compile(r"\[(\d+):(\d{1,2})[.:](\d{1,6})\]")
 # 匹配行内中间时间戳（逐字）
-_INLINE_STAMP_RE = re.compile(r"(<?)(\[)(\d+):(\d{1,2})\.(\d{1,6})(\])(>?)")
+_INLINE_STAMP_RE = re.compile(r"(<?)(\[)(\d+):(\d{1,2})[.:](\d{1,6})(\])(>?)")
 
 
 def _parse_ms(m: int, s: int, frac_str: str) -> int:
@@ -352,9 +352,8 @@ def to_spl(result: LyricResult) -> str:
                 roma_lines=result.romanization if isinstance(result.romanization, list) else None
             )
     
-    # 酷狗 KRC 格式
-    if result.source_name == "kugou" and result.format == LyricFormat.WORD:
-        # result.content 应该是 KRC 解析后的字典结构
+    # 酷狗 KRC 格式（逐字或行级都以解析后的字典传入）
+    if result.source_name == "kugou":
         if isinstance(result.content, dict) and 'orig' in result.content:
             has_translation = 'ts' in result.content and result.content['ts']
             return _krc_to_spl(result.content, has_translation)

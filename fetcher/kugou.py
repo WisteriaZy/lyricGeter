@@ -14,7 +14,7 @@ import time
 from typing import Optional, Dict, Any
 import httpx
 
-from fetcher.base import LyricsFetcher, LyricResult, LyricFormat
+from fetcher.base import LyricsFetcher, LyricResult, LyricFormat, SongCandidate
 from decryptor.krc import KrcDecryptor
 from parser.krc import KrcParser
 
@@ -95,6 +95,45 @@ class KugouApi:
         response.raise_for_status()
         return response.json()
     
+    def search_songs(self, query: str, limit: int = 10) -> list[Dict[str, Any]]:
+        """搜索歌曲候选，返回酷狗原始歌曲信息。"""
+        params = {
+            "keyword": query.strip(),
+            "page": "1",
+            "pagesize": str(limit),
+            "filter": "0"
+        }
+
+        try:
+            data = self._make_request(
+                "http://mobilecdn.kugou.com/api/v3/search/song",
+                params,
+                "search"
+            )
+
+            if data.get("status") != 1:
+                return []
+
+            songs = data.get("data", {}).get("info", [])
+            if not songs:
+                return []
+
+            def score_song(song):
+                song_title = song.get("songname", "")
+                score = 0
+                if '片段' in song_title:
+                    score -= 500
+                if '原唱' in song_title or '翻唱' in song_title:
+                    score -= 300
+                if 'sped up' in song_title.lower() or 'slowed' in song_title.lower():
+                    score -= 200
+                return score
+
+            return sorted(songs, key=score_song, reverse=True)[:limit]
+        except Exception as e:
+            print(f"酷狗搜索失败: {e}")
+            return []
+
     def search_song(self, title: str, artist: str = "") -> Optional[Dict[str, Any]]:
         """搜索歌曲
         
@@ -288,6 +327,43 @@ class KugouFetcher(LyricsFetcher):
     def __init__(self, timeout: int = 10):
         self.api = KugouApi(timeout)
     
+    def search_songs(self, query: str, limit: int = 10) -> list[SongCandidate]:
+        """搜索歌曲候选，供交互式手动选择。"""
+        songs = self.api.search_songs(query, limit=limit)
+        candidates: list[SongCandidate] = []
+        for song in songs:
+            candidates.append(SongCandidate(
+                source_name="kugou",
+                source_id=song.get("hash", ""),
+                title=song.get("songname", ""),
+                artist=song.get("singername", ""),
+                album=song.get("album_name", ""),
+                duration_ms=int(song.get("duration", 0) or 0) * 1000,
+                payload=song,
+            ))
+        return candidates
+
+    def fetch_by_song(self, song: SongCandidate) -> Optional[LyricResult]:
+        """按用户选中的酷狗歌曲获取歌词。"""
+        lyrics = self.api.get_lyrics(song.source_id)
+        if not lyrics:
+            return None
+
+        lyrics_data = lyrics['lyrics']
+        orig_lines = lyrics_data.get('orig', [])
+        has_word_timestamps = bool(orig_lines and len(orig_lines[0].words) > 1)
+        lyric_format = LyricFormat.WORD if has_word_timestamps else LyricFormat.LINE
+
+        return LyricResult(
+            content=lyrics_data,
+            format=lyric_format,
+            source_name="kugou",
+            translation=None,
+            matched_title=song.title,
+            matched_artist=song.artist,
+            score=0.0
+        )
+
     def search(self, title: str, artist: str) -> Optional[LyricResult]:
         """搜索并获取歌词
         

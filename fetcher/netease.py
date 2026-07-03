@@ -10,7 +10,7 @@ from __future__ import annotations
 import httpx
 
 from decryptor.eapi import encrypt_eapi_params
-from fetcher.base import LyricFormat, LyricResult, LyricsFetcher
+from fetcher.base import LyricFormat, LyricResult, LyricsFetcher, SongCandidate
 
 
 class NetEaseApi(LyricsFetcher):
@@ -39,6 +39,62 @@ class NetEaseApi(LyricsFetcher):
             song_info["artist"]
         )
     
+    def search_songs(self, query: str, limit: int = 10) -> list[SongCandidate]:
+        """搜索歌曲候选，供交互式手动选择。"""
+        path = "/api/cloudsearch/pc"
+
+        params = {
+            "s": query.strip(),
+            "type": 1,
+            "offset": 0,
+            "limit": limit,
+        }
+
+        encrypted = encrypt_eapi_params(path, params)
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(
+                    f"{self.BASE_URL}/eapi/cloudsearch/pc",
+                    headers=self.HEADERS,
+                    content=encrypted,
+                )
+
+                if response.status_code != 200:
+                    return []
+
+                data = response.json()
+                if data.get("code") != 200:
+                    return []
+
+                result = data.get("result", {})
+                songs = result.get("songs", [])
+                candidates: list[SongCandidate] = []
+                for song in songs[:limit]:
+                    artists = song.get("ar", [])
+                    artist_names = ", ".join(ar.get("name", "") for ar in artists)
+                    album = song.get("al", {}) or {}
+                    candidates.append(SongCandidate(
+                        source_name="netease",
+                        source_id=str(song.get("id", "")),
+                        title=song.get("name", ""),
+                        artist=artist_names,
+                        album=album.get("name", ""),
+                        duration_ms=int(song.get("dt", 0) or 0),
+                        payload=song,
+                    ))
+                return candidates
+        except Exception:
+            return []
+
+    def fetch_by_song(self, song: SongCandidate) -> LyricResult | None:
+        """按用户选中的网易云歌曲获取歌词。"""
+        try:
+            song_id = int(song.source_id)
+        except (TypeError, ValueError):
+            return None
+        return self._get_lyrics(song_id, song.title, song.artist)
+
     def _search_song(self, title: str, artist: str) -> dict | None:
         """搜索歌曲，返回第一个结果的信息
         

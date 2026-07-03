@@ -8,10 +8,15 @@ from scanner import TrackInfo
 DEFAULT_THRESHOLD = 70.0
 
 
-def _similarity(title: str, artist: str, query_result: str) -> float:
+def similarity_score(title: str, artist: str, query_result: str) -> float:
     """用标题+艺术家与搜索词的相似度打分。"""
     combined = f"{title} {artist}".strip()
     return fuzz.WRatio(combined.lower(), query_result.lower())
+
+
+def _similarity(title: str, artist: str, query_result: str) -> float:
+    """向后兼容旧的内部调用。"""
+    return similarity_score(title, artist, query_result)
 
 
 def find_all(
@@ -48,7 +53,7 @@ def find_all(
         # 相似度过滤
         if result.matched_title or result.matched_artist:
             # 原生 API 返回了匹配歌曲信息，计算相似度
-            result.score = _similarity(
+            result.score = similarity_score(
                 track.title,
                 track.artist,
                 f"{result.matched_title} {result.matched_artist}".strip()
