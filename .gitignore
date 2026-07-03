@@ -37,6 +37,8 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+.claude/
+.agents/
 
 # Testing
 .pytest_cache/
@@ -61,8 +63,8 @@ input/**/*.m4a
 input/**/*.ogg
 input/**/*.wav
 
-# Example 项目保留（用于参考）
-!example/
+# Example
+example/
 
 # 临时文件
 *.tmp

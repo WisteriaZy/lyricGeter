@@ -98,7 +98,7 @@
   - [x] 修改 `matcher.py`：计算标题+艺术家相似度（`rapidfuzz.fuzz.WRatio`）
   - [x] 阈值默认 70 分（`DEFAULT_THRESHOLD`）
   - [x] 原生 API 启用过滤，syncedlyrics 等第三方库信任其内部排序
-  - [x] 测试：`test_similarity.py` 验证过滤逻辑
+  - [x] 手动验证：相似度过滤逻辑已验证（早期根目录脚本已清理）
 
 #### 公共任务
 

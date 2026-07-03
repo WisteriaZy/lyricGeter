@@ -297,7 +297,7 @@ feat: 添加酷狗 KRC 逐字歌词支持
 - 新增 fetcher/kugou.py：酷狗 API 客户端 + LyricsFetcher 适配器
 - 扩展 converter.py：添加 _krc_to_spl() 转换函数
 - 更新 main.py：添加 --no-kugou 选项，默认启用酷狗 API
-- 新增 test_krc.py：KRC 功能测试脚本
+- 早期根目录 KRC 调试脚本已清理；后续测试应整理到正式测试目录
 
 特性：
 - 支持逐字时间戳（延迟逐字标记 <>）

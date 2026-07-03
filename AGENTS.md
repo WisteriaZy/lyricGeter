@@ -4,6 +4,8 @@
 
 本文件为 Codex（Codex.ai/code）提供项目上下文和开发指南。
 
+注意终端环境为PowerShell,此外注意中文编码问题
+
 ## 项目定位
 
 **lyricGeter** 是一个 **离线批量歌词嵌入工具**，面向本地播放器用户（Salt Player、foobar2000），为音乐库批量添加高质量同步歌词。

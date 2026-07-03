@@ -128,19 +128,8 @@ zlib.error: Error -3 while decompressing data: invalid code lengths set
 
 ## 测试文件
 
-当前调试产物（保留用于后续调试）：
+早期 QRC 解密调试脚本和原始 dump 已从主目录清理，避免与正式代码混在一起。后续如继续攻关 QRC，建议把可复现实验整理到 `tests/` 或专门的 `tools/` 目录，并附上最小输入样例。
 
-```
-debug_raw_api.py          - 检查 API 返回的原始数据格式
-debug_orig_raw.txt        - API 返回的加密歌词（hex）
-debug_trans_raw.txt       - API 返回的加密翻译（hex）
-test_decrypt_methods.py   - 测试直接解压 vs 解密后解压
-debug_first_block.py      - 测试第一个 8 字节块的解密
-debug_permutation.py      - 测试初始置换和逆置换正确性
-debug_bitnum.py           - 测试 bitnum 函数实现
-check_if_plaintext.py     - 检查数据是否已是明文
-test_new_qrc.py           - 完整流程测试
-```
 
 ---
 

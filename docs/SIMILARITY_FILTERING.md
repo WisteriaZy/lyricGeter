@@ -115,9 +115,10 @@ class LyricResult:
 
 ## 测试验证
 
-### 测试脚本：`test_similarity.py`
+### 早期手动验证
 
-测试覆盖：
+根目录早期的 `test_similarity.py` 已清理，避免一次性调试脚本与正式代码混在一起。后续应将以下覆盖点迁移为正式 pytest：
+
 1. 相似度计算函数的正确性
 2. 阈值过滤逻辑
 3. 不同匹配程度的得分范围
@@ -205,7 +206,7 @@ python main.py song.mp3 --show-filtered
 - `fetcher/netease.py` - 网易云实现
 - `fetcher/kugou.py` - 酷狗实现
 - `matcher.py` - 匹配逻辑
-- `test_similarity.py` - 测试脚本
+- 正式测试待补充 - 早期根目录验证脚本已清理
 - `TODO.md` - 任务清单
 
 ## Git 提交
