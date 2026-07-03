@@ -247,6 +247,53 @@ class LyricsFetcher(ABC):
 - `None` → 用户跳过此文件
 - 抛出 `SystemExit` → 用户选择退出
 
+## CLI 参数设计
+
+### 歌词来源控制
+
+```bash
+--netease / --no-netease      # 启用/禁用网易云（默认启用）
+--kugou / --no-kugou          # 启用/禁用酷狗（默认启用）
+--qqmusic / --no-qqmusic      # 启用/禁用 QQ 音乐（默认禁用，当前不可用）
+--source [netease|lrclib|musixmatch|all]  # syncedlyrics 来源（默认 all）
+```
+
+**设计理念**：
+- 使用正向参数（`--netease`）而非排除项（`--no-netease`），更直观
+- 网易云和酷狗默认启用，QQ 音乐因技术问题默认禁用
+- `--source` 控制 syncedlyrics 的第三方来源（lrclib、musixmatch 等）
+
+### 交互模式
+
+```bash
+--auto        # 自动模式：按权重选择最优结果（格式优先 > 相似度）
+--dry-run     # 预览模式：只展示匹配结果，不写入文件
+```
+
+**两种工作流**：
+
+1. **交互模式（默认）**：逐文件三步确认
+   - 第一步：从所有候选中选择（netease、kugou、local 等）
+   - 第二步：预览选中歌词（前 30 行，语法高亮）
+   - 第三步：接受 / 返回重选 / 手动编辑 / 跳过 / 退出
+
+2. **自动模式（`--auto`）**：按权重直接写入
+   - 排序规则：`(format.value, -score)`
+   - 格式优先：逐字 > 行级同步 > 纯文本
+   - 相似度次之：分数越高越优
+
+**非交互环境回退**：
+- 检测到 `sys.stdin.isatty() == False` 或 `questionary` 失败时自动切换到简单文本输入
+- 若文本输入也失败（如 CI 环境），自动回退到 auto 模式
+
+### 其他参数
+
+```bash
+--threshold FLOAT    # 相似度阈值 0-100（默认 70.0）
+--lang TEXT          # 翻译语言代码（默认 zh，留空则不获取翻译）
+--prefer-local       # 优先使用本地内嵌歌词（默认优先在线）
+```
+
 ## 开发命令
 
 ```bash
@@ -265,8 +312,8 @@ python main.py song.mp3 --auto
 # 预览模式（不写入）
 python main.py song.mp3 --dry-run
 
-# 指定来源
-python main.py song.mp3 --source netease
+# 仅使用网易云
+python main.py song.mp3 --no-kugou --source netease
 
 # 优先本地歌词
 python main.py song.mp3 --prefer-local
