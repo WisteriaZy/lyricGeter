@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from fetcher import SyncedLyricsFetcher, NetEaseApi
+from fetcher.kugou import KugouFetcher
 from fetcher.base import LyricFormat, LyricResult
 from scanner import scan, TrackInfo
 from matcher import find_best
@@ -38,6 +39,7 @@ def _fetch_result(
     threshold: float,
     prefer_local: bool,
     use_netease: bool,
+    use_kugou: bool,
 ) -> LyricResult | None:
     """网络搜索阶段，在 Progress context 内调用。"""
     if not track.title:
@@ -47,6 +49,9 @@ def _fetch_result(
     # 网易云 API 优先（支持逐字歌词）
     if use_netease:
         fetchers.append(NetEaseApi())
+    # 酷狗 API（支持逐字歌词 + 翻译）
+    if use_kugou:
+        fetchers.append(KugouFetcher())
     # syncedlyrics 作为兜底
     fetchers.append(fetcher)
     
@@ -68,6 +73,7 @@ def _fetch_result(
 @click.option("--lang", default="zh", show_default=True, help="翻译语言代码，留空则不获取翻译")
 @click.option("--prefer-local", is_flag=True, help="优先使用本地内嵌歌词（默认优先在线）")
 @click.option("--no-netease", is_flag=True, help="禁用网易云 API（默认启用）")
+@click.option("--no-kugou", is_flag=True, help="禁用酷狗 API（默认启用）")
 def main(
     path: Path,
     auto: bool,
@@ -77,6 +83,7 @@ def main(
     lang: str,
     prefer_local: bool,
     no_netease: bool,
+    no_kugou: bool,
 ) -> None:
     """为本地音乐文件获取并写入 SPL 歌词。\n\nPATH 可以是单个音乐文件或目录。"""
     providers = _PROVIDER_MAP.get(source.lower())
@@ -104,7 +111,7 @@ def main(
             label = f"{track.artist} - {track.title}" if track.title else track.path.name
             progress.update(task, description=label)
             try:
-                result = _fetch_result(track, fetcher, threshold, prefer_local, use_netease=not no_netease)
+                result = _fetch_result(track, fetcher, threshold, prefer_local, use_netease=not no_netease, use_kugou=not no_kugou)
             except Exception as e:
                 result = None
                 ui_console.log(f"[red]搜索出错[/] {track.path.name}: {e}")

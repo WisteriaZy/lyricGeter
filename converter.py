@@ -7,6 +7,7 @@ from fetcher.base import LyricFormat, LyricResult
 from parser.yrc import YrcParser
 from parser.json_lyric import JsonLyricParser
 from parser.netease_word import NetEaseWordLyricParser
+from parser.krc import KrcParser, LyricsLine as KrcLine
 
 # 匹配行首时间戳列表，如 [00:01.00][00:05.00]
 _STAMP_RE = re.compile(r"\[(\d+):(\d{1,2})\.(\d{1,6})\]")
@@ -230,6 +231,57 @@ def _json_lyric_to_spl(content: str) -> str:
     return '\n'.join(out_lines)
 
 
+def _krc_to_spl(lyrics_data: dict, has_translation: bool = False) -> str:
+    """将 KRC 格式转换为 SPL
+    
+    KRC 格式：[开始ms,持续ms]<偏移ms,持续ms,0>字
+    SPL 格式：[00:00.00]<00:00.10>字<00:00.30>符[00:00.50]
+    
+    关键：
+    - 行首/行尾用 []
+    - 中间时间戳用 <>（延迟逐字标记）
+    - 翻译紧跟主歌词，无时间戳
+    """
+    orig_lines: list[KrcLine] = lyrics_data.get('orig', [])
+    ts_lines: list[KrcLine] = lyrics_data.get('ts', [])
+    
+    if not orig_lines:
+        return ""
+    
+    out_lines: list[str] = []
+    
+    for i, line in enumerate(orig_lines):
+        parts: list[str] = []
+        
+        # 逐字部分
+        for idx, word in enumerate(line.words):
+            if idx == 0:
+                # 行首时间戳：用 []
+                parts.append(_ms_to_stamp(word.start))
+            else:
+                # 中间时间戳：用 <>
+                parts.append(f"<{_ms_to_stamp(word.start)[1:-1]}>")
+            parts.append(word.text)
+        
+        # 行结束时间戳：用 []
+        if i + 1 < len(orig_lines):
+            # 用下一行开始时间作为结束
+            parts.append(_ms_to_stamp(orig_lines[i + 1].start))
+        else:
+            # 最后一行，用行结束时间
+            parts.append(_ms_to_stamp(line.end))
+        
+        out_lines.append(''.join(parts))
+        
+        # 翻译行（紧跟主歌词，无时间戳）
+        if has_translation and i < len(ts_lines):
+            ts_text = ts_lines[i].words[0].text if ts_lines[i].words else ""
+            if ts_text.strip():
+                out_lines.append(ts_text)
+    
+    return '\n'.join(out_lines)
+
+
 def to_spl(result: LyricResult) -> str:
     """
     将 LyricResult 转换为 SPL 格式字符串。
@@ -238,6 +290,13 @@ def to_spl(result: LyricResult) -> str:
     - 逐字模式：校验严格递增，不合格则降级为行级
     - 翻译行：同时间戳，紧跟主歌词行后（省略时间戳）
     """
+    # 酷狗 KRC 格式
+    if result.source_name == "kugou" and result.format == LyricFormat.WORD:
+        # result.content 应该是 KRC 解析后的字典结构
+        if isinstance(result.content, dict) and 'orig' in result.content:
+            has_translation = 'ts' in result.content and result.content['ts']
+            return _krc_to_spl(result.content, has_translation)
+    
     # 网易云混合格式：优先提取标准 LRC 行，过滤 JSON 元数据
     if result.source_name == "netease":
         # 检测网易云逐字格式 [ms,ms](ms,ms,0)字
