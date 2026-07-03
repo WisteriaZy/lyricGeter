@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 背景圆角矩形 - 使用系统颜色属性，回退到白色 -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M24,16L84,16A8,8 0,0 1,92 24L92,84A8,8 0,0 1,84 92L24,92A8,8 0,0 1,16 84L16,24A8,8 0,0 1,24 16z" />
+
+    <!-- L 字母 - 黑色 -->
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M42,34L50,34L50,66L68,66L68,74L42,74z" />
+</vector>

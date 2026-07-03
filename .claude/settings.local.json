@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__filesystem__directory_tree",
+      "WebFetch(domain:moriafly.com)",
+      "Bash(pip install *)",
+      "Bash(python *)",
+      "mcp__filesystem__list_directory"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "context7",
+    "filesystem",
+    "github"
+  ]
+}

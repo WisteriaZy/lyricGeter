@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 应用启动主题 - 用于开屏，与系统主题保持一致 -->
+    <style name="Theme.LDDC.Launch" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- 窗口背景使用主题背景色 -->
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+        <!-- 禁用窗口预览，避免白屏 -->
+        <item name="android:windowDisablePreview">false</item>
+        <!-- 状态栏和导航栏颜色跟随主题 -->
+        <item name="android:statusBarColor">?android:attr/colorBackground</item>
+        <item name="android:navigationBarColor">?android:attr/colorBackground</item>
+    </style>
+
+    <!-- Base application theme. -->
+    <style name="Theme.LDDC" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Customize your theme here. -->
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">shortEdges</item>
+        <!-- 窗口背景色，跟随主题 -->
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+    </style>
+</resources>

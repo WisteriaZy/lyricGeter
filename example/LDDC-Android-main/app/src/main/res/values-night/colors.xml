@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Logo 颜色 - 暗色模式 (与 Material3 primaryContainer 暗色模式一致) -->
+    <color name="logo_background">#FF4F378B</color>
+    <color name="logo_foreground">#FFEADDFF</color>
+</resources>

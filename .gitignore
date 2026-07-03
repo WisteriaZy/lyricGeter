@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Project specific
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.wav
+*.lrc.bak
+failed.log
+
+# 保留 input/ 目录结构但忽略音频文件
+input/**/*.mp3
+input/**/*.flac
+input/**/*.m4a
+input/**/*.ogg
+input/**/*.wav
+
+# Example 项目保留（用于参考）
+!example/
+
+# 临时文件
+*.tmp
+*.log
+.cache/
