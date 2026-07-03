@@ -110,7 +110,7 @@ class KugouApi:
         params = {
             "keyword": keyword,
             "page": "1",
-            "pagesize": "5",
+            "pagesize": "10",  # 增加返回数量以提高匹配精度
             "filter": "0"
         }
         
@@ -128,14 +128,40 @@ class KugouApi:
             if not songs:
                 return None
             
-            # 返回第一个结果
-            song = songs[0]
+            # 智能选择：优先级：艺术家匹配 > 非片段 > 非翻唱
+            def score_song(song):
+                song_title = song.get("songname", "")
+                song_artist = song.get("singername", "")
+                score = 0
+                
+                # 艺术家匹配（最高优先级）
+                if artist and artist.lower() in song_artist.lower():
+                    score += 1000
+                
+                # 过滤片段版
+                if '片段' in song_title:
+                    score -= 500
+                
+                # 过滤翻唱版（包含"原唱"等关键词）
+                if '原唱' in song_title or '翻唱' in song_title:
+                    score -= 300
+                
+                # 过滤 Sped Up / Slowed 版本
+                if 'sped up' in song_title.lower() or 'slowed' in song_title.lower():
+                    score -= 200
+                
+                return score
+            
+            # 按评分排序，选择最优结果
+            sorted_songs = sorted(songs, key=score_song, reverse=True)
+            selected_song = sorted_songs[0]
+            
             return {
-                "hash": song.get("hash", ""),
-                "title": song.get("songname", ""),
-                "artist": song.get("singername", ""),
-                "album": song.get("album_name", ""),
-                "duration": song.get("duration", 0) * 1000  # 秒转毫秒
+                "hash": selected_song.get("hash", ""),
+                "title": selected_song.get("songname", ""),
+                "artist": selected_song.get("singername", ""),
+                "album": selected_song.get("album_name", ""),
+                "duration": selected_song.get("duration", 0) * 1000  # 秒转毫秒
             }
         
         except Exception as e:
