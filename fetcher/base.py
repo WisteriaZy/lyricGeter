@@ -14,10 +14,12 @@ class LyricFormat(IntEnum):
 
 @dataclass
 class LyricResult:
-    content: str                     # 主歌词（LRC 或纯文本）
+    content: str | dict              # 主歌词（LRC/纯文本）或解析后的字典（KRC）
     format: LyricFormat
-    source_name: str                 # 来源名称，如 "NetEase"
+    source_name: str                 # 来源名称，如 "netease", "kugou"
     translation: str | None = None   # 翻译歌词（同格式 LRC 或纯文本）
+    matched_title: str = ""          # 平台返回的歌曲标题（用于相似度评分）
+    matched_artist: str = ""         # 平台返回的艺术家（用于相似度评分）
     score: float = 0.0               # rapidfuzz 相似度分 (0-100)
 
 

@@ -44,12 +44,19 @@ def find_best(
         if result is None:
             continue
 
-        # 相似度过滤（暂时禁用：syncedlyrics 不返回匹配歌曲元数据，无法准确打分）
-        # TODO: 实现平台原生 API 后恢复此功能
-        result.score = 100.0  # 信任 syncedlyrics 内部排序
-        # score = _similarity(track.title, track.artist, result.matched_title)
-        # if score < threshold:
-        #     continue
+        # 相似度过滤
+        if result.matched_title or result.matched_artist:
+            # 原生 API 返回了匹配歌曲信息，计算相似度
+            result.score = _similarity(
+                track.title,
+                track.artist,
+                f"{result.matched_title} {result.matched_artist}".strip()
+            )
+            if result.score < threshold:
+                continue
+        else:
+            # syncedlyrics 等第三方库，信任其内部排序
+            result.score = 100.0
 
         # prefer_local 模式且有本地歌词时：在线结果格式必须更优才采用
         if prefer_local and local_content and local_format is not None:

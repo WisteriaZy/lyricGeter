@@ -302,7 +302,9 @@ class KugouFetcher(LyricsFetcher):
                 format=lyric_format,
                 source_name="kugou",
                 translation=None,  # KRC 的翻译已经在 lyrics_data['ts'] 中
-                score=0.0  # 暂不评分
+                matched_title=song['title'],
+                matched_artist=song['artist'],
+                score=0.0  # matcher.py 会计算相似度
             )
         
         except Exception as e:

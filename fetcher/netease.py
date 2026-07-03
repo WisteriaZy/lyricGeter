@@ -28,15 +28,23 @@ class NetEaseApi(LyricsFetcher):
     def search(self, title: str, artist: str) -> LyricResult | None:
         """搜索歌曲并获取歌词"""
         # 步骤 1：搜索歌曲
-        song_id = self._search_song(title, artist)
-        if song_id is None:
+        song_info = self._search_song(title, artist)
+        if song_info is None:
             return None
         
         # 步骤 2：获取歌词
-        return self._get_lyrics(song_id, title, artist)
+        return self._get_lyrics(
+            song_info["id"],
+            song_info["title"],
+            song_info["artist"]
+        )
     
-    def _search_song(self, title: str, artist: str) -> int | None:
-        """搜索歌曲，返回第一个结果的 ID"""
+    def _search_song(self, title: str, artist: str) -> dict | None:
+        """搜索歌曲，返回第一个结果的信息
+        
+        Returns:
+            {"id": int, "title": str, "artist": str} 或 None
+        """
         path = "/api/cloudsearch/pc"
         query = f"{title} {artist}".strip()
         
@@ -72,14 +80,28 @@ class NetEaseApi(LyricsFetcher):
                 if not songs:
                     return None
                 
-                # 返回第一个结果的 ID
-                return songs[0].get("id")
+                # 返回第一个结果的信息
+                first_song = songs[0]
+                artists = first_song.get("ar", [])
+                artist_names = ", ".join(ar.get("name", "") for ar in artists)
+                
+                return {
+                    "id": first_song.get("id"),
+                    "title": first_song.get("name", ""),
+                    "artist": artist_names,
+                }
         
         except Exception as e:
             return None
     
-    def _get_lyrics(self, song_id: int, title: str, artist: str) -> LyricResult | None:
-        """获取歌词（含 YRC）"""
+    def _get_lyrics(self, song_id: int, matched_title: str, matched_artist: str) -> LyricResult | None:
+        """获取歌词（含 YRC）
+        
+        Args:
+            song_id: 歌曲 ID
+            matched_title: 平台返回的歌曲标题
+            matched_artist: 平台返回的艺术家
+        """
         path = "/api/song/lyric/v1"
         
         params = {
@@ -135,6 +157,8 @@ class NetEaseApi(LyricsFetcher):
                     format=lyric_format,
                     source_name="netease",
                     translation=translation,
+                    matched_title=matched_title,
+                    matched_artist=matched_artist,
                 )
         
         except Exception:
