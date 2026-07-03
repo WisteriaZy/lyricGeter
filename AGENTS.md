@@ -9,11 +9,11 @@
 **lyricGeter** 是一个 **离线批量歌词嵌入工具**，面向本地播放器用户（Salt Player、foobar2000），为音乐库批量添加高质量同步歌词。
 
 **当前状态（2026-07-03）**：
-- ✅ 网易云 API 完整实现，支持逐字歌词（YRC）
+- ✅ 网易云 API 完整实现，支持逐字歌词（YRC）+ 翻译
+- ✅ 酷狗 API 完整实现，支持逐字歌词（KRC）+ 翻译 + 罗马音
+- ✅ 相似度过滤恢复正常（网易云、酷狗启用，阈值 70）
 - ✅ SPL 格式转换完全符合官方标准
-- ✅ 翻译功能正常工作（容差匹配算法）
-- ✅ 逐字覆盖率：41.7%（测试集 12 首）
-- 🚧 待实现：酷狗 KRC、QQ 音乐 QRC（提高逐字覆盖率）
+- ⚠️ QQ 音乐 QRC 解密遇到技术难点，暂时搁置
 
 ### 核心价值
 
@@ -293,62 +293,42 @@ ruff format .
 
 ### ⚠️ 已知限制
 
-1. **相似度过滤已实现但固定为 100 分**
-   - **原因**：网易云 API 已实现，但搜索结果未返回匹配的标题/艺术家元数据
-   - **影响**：无法计算相似度评分，所有结果固定 `score=100.0`
-   - **临时方案**：信任网易云 API 的内部排序（实测匹配准确度高）
-   - **长期方案**：提取搜索响应中的歌曲信息，实现 `rapidfuzz` 相似度评分
+1. **相似度过滤已恢复正常**
+   - **现状**：网易云和酷狗原生 API 返回匹配歌曲信息，启用相似度评分（默认阈值 70）
+   - **局限**：Lrclib、Musixmatch 第三方库不返回匹配信息，信任其内部排序
 
-2. **不支持 byId 精确匹配**
+2. **QQ 音乐 QRC 暂不可用**
+   - **原因**：自定义 3DES 解密算法实现遇到技术难点，解密后的数据无法被 zlib 解压
+   - **状态**：已完整移植 LDDC-Android 的实现，但存在细微差异导致失败
+   - **影响**：无法获取 QQ 音乐的逐字歌词，但网易云 + 酷狗已覆盖大部分需求
+   - **详情**：见 `docs/QRC_DECRYPTION_STATUS.md`
+
+3. **不支持 byId 精确匹配**
    - **原因**：本地音乐文件不携带平台 ID（网易云歌曲 ID、QQ 音乐 mid 等）
    - **影响**：只能用 byQuery（标题+艺术家搜索），匹配准确度低于播放器内加载
    - **缓解**：使用 `--dry-run` 预览匹配结果，批量写入前检查错配
 
-3. **逐字歌词覆盖率约 42%**
-   - **现状**：网易云 YRC 已完整实现，测试集逐字歌词覆盖率 41.7%（5/12）
-   - **原因**：部分歌曲仅提供行级同步歌词，网易云也无逐字版本
-   - **解决方案**：计划集成酷狗 KRC 和 QQ 音乐 QRC，提高逐字覆盖率
-   - **进度**：网易云 ✅ 已完成，酷狗 KRC 🚧 下一步，QQ 音乐 QRC 📅 计划中
+4. **逐字歌词覆盖率依赖平台**
+   - **现状**：网易云 YRC + 酷狗 KRC 已完整实现
+   - **原因**：部分歌曲仅提供行级同步歌词，即使原生平台也无逐字版本
+   - **改进**：两个平台互补，提高了逐字覆盖率
 
 ### 🚧 下一步（P0 任务）
 
 见 [TODO.md](TODO.md) 和相关技术文档，当前优先级：
 
 1. **✅ 网易云 YRC 支持**（已完成 2026-07-03）
-   - ✅ `decryptor/eapi.py`：EAPI 加密（AES-ECB + MD5 签名）
-   - ✅ `parser/netease_word.py`：网易云专有逐字格式解析器
-   - ✅ `parser/yrc.py`：YRC 旧版格式解析器（网易云未使用）
-   - ✅ `parser/json_lyric.py`：JSON 格式解析器
-   - ✅ `fetcher/netease.py`：网易云 API 客户端
-   - ✅ `converter.py`：三种格式转 SPL，支持混合格式
-   - ✅ **SPL 格式修正**：逐字时间戳位置、行结束时间戳
-   - ✅ 测试：12 首歌曲，逐字覆盖率 41.7%
-   - 📄 文档：`docs/NETEASE_IMPLEMENTATION.md`、`docs/SUMMARY.md`
-
-2. **🚧 酷狗 KRC 支持**（下一步）
-   - [ ] `decryptor/krc.py`：Base64 + XOR + zlib 解密
-   - [ ] `parser/krc.py`：解析 `<>` 标记的逐字格式
-   - [ ] `fetcher/kugou.py`：两步获取（搜索候选 + 下载）
-   - [ ] `converter.py`：KRC → SPL 转换
-   - 参考：`example/LDDC-Android-main/app/src/main/java/com/lalilu/lmusic/datasource/KugouDataSource.kt`
-
-3. **📅 QQ 音乐 QRC 支持**（计划中）
-   - [ ] `decryptor/qrc.py`：3DES-ECB + zlib 解密
-   - [ ] `parser/qrc.py`：解析 QRC 格式
-   - [ ] `fetcher/qqmusic.py`：搜索 + 歌词接口（需处理 cookie）
-   - 参考：`example/LDDC-Android-main/app/src/main/java/com/lalilu/lmusic/datasource/QQMusicDataSource.kt`
-
-4. **📅 恢复相似度过滤**（待定）
-   - [ ] 重构 `fetcher/base.py`：`LyricResult` 新增 `matched_title`, `matched_artist` 字段
-   - [ ] 修改原生 API 获取器：提取搜索结果元数据
-   - [ ] `matcher.py`：计算标题+艺术家相似度（`rapidfuzz.fuzz.WRatio`）
-   - [ ] 阈值默认 70 分，CLI 参数 `--threshold` 可配置
-
-5. **📅 补充单元测试**（持续）
-   - [ ] 解密器测试（关键！）：用 LDDC 已知样例验证
-   - [ ] 解析器测试：正则捕获准确率 > 95%
-   - [ ] `converter.py`：边界情况（乱序时间戳、特殊字符、翻译对齐）
-   - [ ] 集成测试：端到端流程
+2. **✅ 酷狗 KRC 支持**（已完成 2026-07-03）
+3. **✅ 相似度过滤恢复**（已完成 2026-07-03）
+4. **⚠️ QQ 音乐 QRC 支持**（搁置 - 技术难点）
+5. **📋 项目文档完善**（进行中）
+   - [ ] 更新 README 和 AGENTS.md
+   - [ ] 清理调试文件
+   - [ ] 提交代码到版本控制
+6. **📋 用户文档**（下一步）
+   - [ ] 添加使用截图
+   - [ ] 编写常见问题解答
+   - [ ] 补充贡献指南
 
 ## 编码规范
 

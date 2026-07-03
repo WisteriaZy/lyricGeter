@@ -16,8 +16,10 @@ class LyricFormat(IntEnum):
 class LyricResult:
     content: str | dict              # 主歌词（LRC/纯文本）或解析后的字典（KRC）
     format: LyricFormat
-    source_name: str                 # 来源名称，如 "netease", "kugou"
-    translation: str | None = None   # 翻译歌词（同格式 LRC 或纯文本）
+    source_name: str                 # 来源名称，如 "netease", "kugou", "qqmusic"
+    translation: str | list | None = None   # 翻译歌词（同格式 LRC 或纯文本，或解析后的列表）
+    romanization: list | None = None        # 罗马音（QQ 音乐）
+    lines: list | None = None               # 解析后的行列表（用于 QRC 等格式）
     matched_title: str = ""          # 平台返回的歌曲标题（用于相似度评分）
     matched_artist: str = ""         # 平台返回的艺术家（用于相似度评分）
     score: float = 0.0               # rapidfuzz 相似度分 (0-100)

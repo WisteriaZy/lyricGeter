@@ -231,6 +231,59 @@ def _json_lyric_to_spl(content: str) -> str:
     return '\n'.join(out_lines)
 
 
+def _qrc_to_spl(lines: list[dict], trans_lines: list[dict] = None, roma_lines: list[dict] = None) -> str:
+    """将 QRC 解析结果转换为 SPL
+    
+    Args:
+        lines: QRC 主歌词解析结果
+        trans_lines: 翻译行（可选）
+        roma_lines: 罗马音行（可选）
+    
+    Returns:
+        SPL 格式字符串
+    """
+    if not lines:
+        return ""
+    
+    out_lines: list[str] = []
+    
+    for i, line in enumerate(lines):
+        parts: list[str] = []
+        
+        # 如果有逐字信息
+        if line.get("words"):
+            for idx, word in enumerate(line["words"]):
+                if idx == 0:
+                    # 行首时间戳：用 []
+                    parts.append(_ms_to_stamp(word["start"]))
+                else:
+                    # 中间时间戳：用 <>（SPL 延迟逐字）
+                    parts.append(f"<{_ms_to_stamp(word['start'])[1:-1]}>")
+                parts.append(word["text"])
+        else:
+            # 无逐字信息，只有行级时间戳
+            parts.append(_ms_to_stamp(line["start"]))
+            parts.append(line["text"])
+        
+        # 行结束时间戳：用 []
+        if i + 1 < len(lines):
+            # 用下一行开始时间作为结束
+            parts.append(_ms_to_stamp(lines[i + 1]["start"]))
+        else:
+            # 最后一行，用行结束时间
+            parts.append(_ms_to_stamp(line["end"]))
+        
+        out_lines.append(''.join(parts))
+        
+        # 翻译行（紧跟主歌词，无时间戳）
+        if trans_lines and i < len(trans_lines):
+            trans_text = trans_lines[i].get("text", "")
+            if trans_text.strip():
+                out_lines.append(trans_text)
+    
+    return '\n'.join(out_lines)
+
+
 def _krc_to_spl(lyrics_data: dict, has_translation: bool = False) -> str:
     """将 KRC 格式转换为 SPL
     
@@ -290,6 +343,15 @@ def to_spl(result: LyricResult) -> str:
     - 逐字模式：校验严格递增，不合格则降级为行级
     - 翻译行：同时间戳，紧跟主歌词行后（省略时间戳）
     """
+    # QQ 音乐 QRC 格式
+    if result.source_name == "qqmusic":
+        if isinstance(result.lines, list) and result.lines:
+            return _qrc_to_spl(
+                result.lines,
+                trans_lines=result.translation if isinstance(result.translation, list) else None,
+                roma_lines=result.romanization if isinstance(result.romanization, list) else None
+            )
+    
     # 酷狗 KRC 格式
     if result.source_name == "kugou" and result.format == LyricFormat.WORD:
         # result.content 应该是 KRC 解析后的字典结构

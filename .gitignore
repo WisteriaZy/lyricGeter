@@ -68,3 +68,11 @@ input/**/*.wav
 *.tmp
 *.log
 .cache/
+
+# 调试文件（保留本地，不提交）
+debug_*.py
+debug_*.txt
+debug_*.hex
+test_*.py
+check_*.py
+output.txt
