@@ -61,12 +61,16 @@
   - [x] 集成到 `main.py`，默认启用（`--no-netease` 禁用）
   - [x] 测试：用 `input/飞 - ANU.mp3` 验证藏语歌词+翻译
 
-- [ ] **酷狗 KRC 支持**（难度 ⭐⭐）
-  - [ ] `decryptor/krc.py`：Base64 + XOR + zlib 解密
-  - [ ] `parser/krc.py`：解析 `<>` 标记的逐字格式
-  - [ ] `fetcher/kugou.py`：两步获取（搜索候选 + 下载）
-  - [ ] `converter.py`：KRC → SPL 转换
-  - [ ] 测试：验证 KRC 解密正确性
+- [x] **酷狗 KRC 支持**（难度 ⭐⭐）✅ **已完成 2026-07-03**
+  - [x] `decryptor/krc.py`：Base64 + XOR + zlib 解密
+  - [x] `parser/krc.py`：解析 `<>` 标记的逐字格式 + 翻译 + 罗马音
+  - [x] `fetcher/kugou.py`：两步获取（搜索候选 + 下载）+ LyricsFetcher 适配器
+  - [x] `converter.py`：KRC → SPL 转换
+  - [x] 集成到 `main.py`，默认启用（`--no-kugou` 禁用）
+  - [x] 测试：验证 KRC 解密正确性
+    - ✅ `input/飞 - ANU.mp3`：藏文歌曲，67 行逐字 + 翻译
+    - ✅ `input/CHO-DARI- - 23.exe, 初音ミク.mp3`：日文歌曲，52 行逐字
+  - [x] 文档：`docs/KUGOU_KRC_IMPLEMENTATION.md`
 
 #### 第 2 周：QQ 音乐 + 相似度恢复
 
