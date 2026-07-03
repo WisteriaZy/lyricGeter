@@ -77,6 +77,30 @@ def _open_editor(spl: str) -> str:
             pass
 
 
+def _simple_select(prompt: str, choices: list[tuple[str, any]]) -> any:
+    """简单的文本选择菜单，用于 questionary 不可用时的回退。
+    
+    Args:
+        prompt: 提示文本
+        choices: [(显示文本, 返回值), ...]
+    
+    Returns:
+        用户选择的值，或 None（用户输入无效）
+    """
+    console.print(f"\n[bold]{prompt}[/]")
+    for i, (label, _) in enumerate(choices, 1):
+        console.print(f"  {i}. {label}")
+    
+    try:
+        user_input = input("\n请输入选项编号: ").strip()
+        idx = int(user_input) - 1
+        if 0 <= idx < len(choices):
+            return choices[idx][1]
+    except (ValueError, KeyboardInterrupt, EOFError):
+        pass
+    return None
+
+
 def confirm_with_candidates(
     candidates: list[LyricResult],
     title: str,
@@ -103,74 +127,111 @@ def confirm_with_candidates(
         console.print("[dim]（非交互式环境，自动选择最优结果）[/]")
         return spl if not dry_run else None
     
-    # 第一步：选择候选
-    choices = []
-    for i, result in enumerate(candidates):
-        format_label = _FORMAT_LABEL[result.format]
-        score_text = f" (相似度: {result.score:.0f})" if result.score > 0 and result.score < 100 else ""
-        label = f"{i+1}. {result.source_name} - {Text.from_markup(format_label).plain}{score_text}"
-        choices.append(questionary.Choice(label, value=i))
-    
-    choices.append(questionary.Choice("跳过此文件", value="skip"))
-    choices.append(questionary.Choice("退出程序", value="quit"))
-    
     console.print(f"\n[bold]{title}[/]" + (f" — [dim]{artist}[/]" if artist else ""))
     console.print(f"找到 {len(candidates)} 个候选歌词：\n")
     
-    try:
-        selection = questionary.select(
-            "选择歌词来源：",
-            choices=choices,
-        ).ask()
-    except Exception as e:
-        # questionary 在某些环境下可能失败，回退到简单输入
-        console.print(f"[yellow]交互菜单不可用: {e}[/]")
-        console.print("[dim]自动选择最优结果[/]")
-        selection = 0
+    # 尝试使用 questionary，失败则回退到简单文本输入
+    use_questionary = sys.stdout.isatty()
     
-    if selection is None or selection == "quit":
-        raise SystemExit(0)
-    if selection == "skip":
-        return None
-    
-    # 第二步：预览并确认
-    result = candidates[selection]
-    spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
-    
-    _render_preview(spl, title, artist, result)
-    
-    if dry_run:
-        console.print("[dim]（dry-run 模式，不写入）[/]")
-        return None
-    
-    # 第三步：操作选择
-    try:
-        action = questionary.select(
-            "操作：",
-            choices=[
-                questionary.Choice("接受并写入", value="accept"),
-                questionary.Choice("返回重新选择", value="back"),
-                questionary.Choice("手动编辑后写入", value="edit"),
-                questionary.Choice("跳过此文件", value="skip"),
-                questionary.Choice("退出程序", value="quit"),
-            ],
-        ).ask()
-    except Exception:
-        # 非交互式环境，自动接受
-        console.print("[dim]（非交互式环境，自动接受）[/]")
-        action = "accept"
-    
-    if action is None or action == "quit":
-        raise SystemExit(0)
-    if action == "skip":
-        return None
-    if action == "back":
-        # 递归调用，让用户重新选择
-        return confirm_with_candidates(candidates, title, artist, dry_run=dry_run)
-    if action == "edit":
-        edited = _open_editor(spl)
-        return edited if edited.strip() else None
-    return spl  # accept
+    while True:
+        # 第一步：选择候选
+        if use_questionary:
+            choices = []
+            for i, result in enumerate(candidates):
+                format_label = _FORMAT_LABEL[result.format]
+                score_text = f" (相似度: {result.score:.0f})" if result.score > 0 and result.score < 100 else ""
+                label = f"{i+1}. {result.source_name} - {Text.from_markup(format_label).plain}{score_text}"
+                choices.append(questionary.Choice(label, value=i))
+            
+            choices.append(questionary.Choice("跳过此文件", value="skip"))
+            choices.append(questionary.Choice("退出程序", value="quit"))
+            
+            try:
+                selection = questionary.select(
+                    "选择歌词来源：",
+                    choices=choices,
+                ).ask()
+            except Exception as e:
+                console.print(f"[yellow]questionary 不可用: {e}[/]")
+                console.print("[dim]切换到简单文本输入模式[/]")
+                use_questionary = False
+                continue
+        else:
+            # 简单文本选择
+            choices = []
+            for i, result in enumerate(candidates):
+                format_text = {LyricFormat.WORD: "逐字", LyricFormat.LINE: "行级同步", LyricFormat.PLAIN: "纯文本"}[result.format]
+                score_text = f" (相似度: {result.score:.0f})" if result.score > 0 and result.score < 100 else ""
+                label = f"{result.source_name} - {format_text}{score_text}"
+                choices.append((label, i))
+            
+            choices.append(("跳过此文件", "skip"))
+            choices.append(("退出程序", "quit"))
+            
+            selection = _simple_select("选择歌词来源：", choices)
+            if selection is None:
+                # 无法交互（如 EOFError），回退到自动模式
+                console.print("[dim]无法进行交互输入，自动选择最优结果[/]")
+                result = candidates[0]
+                spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+                _render_preview(spl, title, artist, result)
+                return spl if not dry_run else None
+        
+        if selection is None or selection == "quit":
+            raise SystemExit(0)
+        if selection == "skip":
+            return None
+        
+        # 第二步：预览并确认
+        result = candidates[selection]
+        spl = result.content if result.format == LyricFormat.PLAIN else to_spl(result)
+        
+        _render_preview(spl, title, artist, result)
+        
+        if dry_run:
+            console.print("[dim]（dry-run 模式，不写入）[/]")
+            return None
+        
+        # 第三步：操作选择
+        if use_questionary:
+            try:
+                action = questionary.select(
+                    "操作：",
+                    choices=[
+                        questionary.Choice("接受并写入", value="accept"),
+                        questionary.Choice("返回重新选择", value="back"),
+                        questionary.Choice("手动编辑后写入", value="edit"),
+                        questionary.Choice("跳过此文件", value="skip"),
+                        questionary.Choice("退出程序", value="quit"),
+                    ],
+                ).ask()
+            except Exception:
+                use_questionary = False
+                continue
+        else:
+            action_choices = [
+                ("接受并写入", "accept"),
+                ("返回重新选择", "back"),
+                ("手动编辑后写入", "edit"),
+                ("跳过此文件", "skip"),
+                ("退出程序", "quit"),
+            ]
+            action = _simple_select("操作：", action_choices)
+            if action is None:
+                # 无法交互，默认接受
+                console.print("[dim]无法交互，自动接受[/]")
+                action = "accept"
+        
+        if action is None or action == "quit":
+            raise SystemExit(0)
+        if action == "skip":
+            return None
+        if action == "back":
+            continue  # 回到循环开始，重新选择
+        if action == "edit":
+            edited = _open_editor(spl)
+            return edited if edited.strip() else None
+        return spl  # accept
 
 
 def confirm(
