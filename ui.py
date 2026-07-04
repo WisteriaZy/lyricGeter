@@ -34,12 +34,12 @@ def _line_has_timestamp(line: str) -> bool:
 
 
 def summarize_spl(spl: str, *, translation_hint: bool = False) -> tuple[int, bool]:
-    """返回主歌词行数和是否带翻译。"""
+    """返回总行数（含翻译行）和是否带翻译。"""
     non_empty_lines = [line.strip() for line in spl.splitlines() if line.strip()]
     timed_indices = [i for i, line in enumerate(non_empty_lines) if _line_has_timestamp(line)]
 
     if timed_indices:
-        line_count = len(timed_indices)
+        line_count = len(non_empty_lines)
         has_translation = translation_hint or any(
             i > 0 and _line_has_timestamp(non_empty_lines[i - 1])
             for i, line in enumerate(non_empty_lines)

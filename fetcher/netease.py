@@ -215,6 +215,7 @@ class NetEaseApi(LyricsFetcher):
                     translation=translation,
                     matched_title=matched_title,
                     matched_artist=matched_artist,
+                    lrc_content=lrc_content if yrc_content and lrc_content else None,
                 )
         
         except Exception:

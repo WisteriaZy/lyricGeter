@@ -275,6 +275,41 @@ def _netease_word_to_spl(content: str) -> str:
     return '\n'.join(out_lines)
 
 
+def _merge_translation_by_lrc(spl_content: str, lrc_content: str, trans_lrc: str) -> str:
+    """按 LRC 行位置对齐翻译，避免 YRC intro 时间戳压缩导致的翻译错位。
+
+    网易云 YRC 有时会将 intro 行（标题/词/曲）压在同一秒区间，
+    而翻译 LRC 与普通 LRC 共享同一套时间戳。若仅按 YRC SPL
+    时间戳做容差匹配，翻译会被错配给先到的 intro 行。
+
+    此函数用 LRC 与带时间戳的 SPL 行做 1:1 位置对齐，
+    再按 LRC 时间戳查 tlyric 取对应翻译文本。
+    """
+    lrc_lines = _parse_lrc(lrc_content)
+    trans_map: dict[int, str] = {}
+    for tl in _parse_lrc(trans_lrc):
+        if not tl.text.strip():
+            continue
+        for ms in tl.stamps:
+            trans_map[ms] = tl.text.strip()
+
+    spl_lines = spl_content.splitlines()
+    timed_indices = [i for i, line in enumerate(spl_lines) if _STAMP_RE.match(line)]
+
+    if not lrc_lines or len(lrc_lines) != len(timed_indices):
+        # 位置无法对齐时回退为原有容差匹配
+        return _merge_translation_to_spl(spl_content, trans_lrc)
+
+    out: list[str] = []
+    for j, spl_idx in enumerate(timed_indices):
+        out.append(spl_lines[spl_idx])
+        lrc_ms = lrc_lines[j].stamps[0]
+        if lrc_ms in trans_map:
+            out.append(trans_map[lrc_ms])
+
+    return "\n".join(out)
+
+
 def _json_lyric_to_spl(content: str) -> str:
     """将网易云新版 JSON 格式转换为 SPL"""
     parser = JsonLyricParser()
@@ -486,6 +521,10 @@ def to_spl(result: LyricResult) -> str:
             spl_content = _netease_word_to_spl(result.content)
             # 如果有翻译，合并翻译行
             if result.translation:
+                # 优先用 LRC 做位置对齐，避免 YRC intro 时间戳压缩导致翻译错位
+                lrc_content = getattr(result, "lrc_content", None)
+                if lrc_content:
+                    return _merge_translation_by_lrc(spl_content, lrc_content, result.translation)
                 return _merge_translation_to_spl(spl_content, result.translation)
             return spl_content
         
