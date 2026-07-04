@@ -300,55 +300,54 @@ def _json_lyric_to_spl(content: str) -> str:
     return '\n'.join(out_lines)
 
 
-def _qrc_to_spl(lines: list[dict], trans_lines: list[dict] = None, roma_lines: list[dict] = None) -> str:
+def _qrc_to_spl(orig_lines: list, trans_lines: list = None, roma_lines: list = None) -> str:
     """将 QRC 解析结果转换为 SPL
     
     Args:
-        lines: QRC 主歌词解析结果
-        trans_lines: 翻译行（可选）
-        roma_lines: 罗马音行（可选）
+        orig_lines: 主歌词行列表（LyricsLine 对象）
+        trans_lines: 翻译行列表（可选，LyricsLine 对象）
+        roma_lines: 罗马音行列表（可选，LyricsLine 对象）
     
     Returns:
         SPL 格式字符串
     """
-    if not lines:
+    if not orig_lines:
         return ""
     
     out_lines: list[str] = []
     
-    for i, line in enumerate(lines):
+    for i, line in enumerate(orig_lines):
         parts: list[str] = []
         
-        # 如果有逐字信息
-        if line.get("words"):
-            for idx, word in enumerate(line["words"]):
+        # 如果有逐字信息（多个 word）
+        if line.words and len(line.words) > 1:
+            for idx, word in enumerate(line.words):
                 if idx == 0:
-                    # 行首时间戳：用 []
-                    parts.append(_ms_to_stamp(word["start"]))
+                    parts.append(_ms_to_stamp(word.start))
                 else:
-                    # 中间时间戳：用 <>（SPL 延迟逐字）
-                    parts.append(f"<{_ms_to_stamp(word['start'])[1:-1]}>")
-                parts.append(word["text"])
+                    parts.append(f"<{_ms_to_stamp(word.start)[1:-1]}>")
+                parts.append(word.text)
         else:
-            # 无逐字信息，只有行级时间戳
-            parts.append(_ms_to_stamp(line["start"]))
-            parts.append(line["text"])
+            # 无逐字信息或单个 word，只有行级时间戳
+            parts.append(_ms_to_stamp(line.start))
+            if line.words:
+                parts.append(line.words[0].text)
         
         # 行结束时间戳：用 []
-        if i + 1 < len(lines):
-            # 用下一行开始时间作为结束
-            parts.append(_ms_to_stamp(lines[i + 1]["start"]))
+        if i + 1 < len(orig_lines):
+            parts.append(_ms_to_stamp(orig_lines[i + 1].start))
         else:
-            # 最后一行，用行结束时间
-            parts.append(_ms_to_stamp(line["end"]))
+            parts.append(_ms_to_stamp(line.end))
         
         out_lines.append(''.join(parts))
         
         # 翻译行（紧跟主歌词，无时间戳）
         if trans_lines and i < len(trans_lines):
-            trans_text = trans_lines[i].get("text", "")
-            if trans_text.strip():
-                out_lines.append(trans_text)
+            trans = trans_lines[i]
+            if trans.words:
+                trans_text = trans.words[0].text
+                if trans_text and trans_text.strip():
+                    out_lines.append(trans_text)
     
     return '\n'.join(out_lines)
 
@@ -414,12 +413,12 @@ def to_spl(result: LyricResult) -> str:
     """
     # QQ 音乐 QRC 格式
     if result.source_name == "qqmusic":
-        if isinstance(result.lines, list) and result.lines:
-            return _qrc_to_spl(
-                result.lines,
-                trans_lines=result.translation if isinstance(result.translation, list) else None,
-                roma_lines=result.romanization if isinstance(result.romanization, list) else None
-            )
+        from parser.qrc import qrc_str_parse
+        _, orig_lines = qrc_str_parse(result.content)
+        trans_lines = None
+        if result.translation:
+            _, trans_lines = qrc_str_parse(result.translation)
+        return _qrc_to_spl(orig_lines, trans_lines=trans_lines)
     
     # 酷狗 KRC 格式（逐字或行级都以解析后的字典传入）
     if result.source_name == "kugou":

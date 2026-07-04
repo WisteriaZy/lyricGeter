@@ -342,7 +342,7 @@ def _confirm_interactive_track(
 @click.option("--prefer-local", is_flag=True, help="优先使用本地内嵌歌词（默认优先在线）")
 @click.option("--netease/--no-netease", default=True, show_default=True, help="启用/禁用网易云 API")
 @click.option("--kugou/--no-kugou", default=True, show_default=True, help="启用/禁用酷狗 API")
-@click.option("--qqmusic/--no-qqmusic", default=False, show_default=True, help="启用/禁用 QQ 音乐 API（当前无效）")
+@click.option("--qqmusic/--no-qqmusic", default=True, show_default=True, help="启用/禁用 QQ 音乐 API")
 def main(
     path: Path,
     auto: bool,

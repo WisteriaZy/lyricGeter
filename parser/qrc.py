@@ -1,134 +1,137 @@
 """QQ 音乐 QRC 格式解析器
 
-QRC 格式类似 LRC，但带逐字时间戳
-格式：[行开始ms,行持续ms]文字(字开始ms,字持续ms)文字(字开始ms,字持续ms)...
+基于 LDDC (Python) 项目的 qrc.py 实现
+支持 XML 包裹格式和纯 LRC 格式
 """
 
 import re
-import logging
 from typing import List, Tuple, Optional
 
-logger = logging.getLogger(__name__)
+
+class LyricsWord:
+    """逐字歌词单元"""
+    def __init__(self, start: int, end: int, text: str):
+        self.start = start
+        self.end = end
+        self.text = text
+
+    def __repr__(self):
+        return f"LyricsWord(start={self.start}, end={self.end}, text='{self.text}')"
 
 
-class QrcParser:
-    """QRC 格式解析器"""
-    
-    # 匹配行：[开始,持续]内容
-    LINE_PATTERN = re.compile(r'^\[(\d+),(\d+)\](.*)$')
-    
-    # 匹配逐字时间戳：文字(开始,持续)
-    WORD_PATTERN = re.compile(r'([^(]*)\((\d+),(\d+)\)')
-    
-    @classmethod
-    def parse(cls, qrc_text: str) -> List[dict]:
-        """解析 QRC 歌词
-        
-        Args:
-            qrc_text: QRC 明文歌词
-            
-        Returns:
-            解析后的行列表，每行包含：
-            - start: 行开始时间（毫秒）
-            - end: 行结束时间（毫秒）
-            - text: 完整行文本（不含时间戳）
-            - words: 逐字信息列表 [{"text": "字", "start": ms, "end": ms}, ...]
-        """
-        lines = []
-        
-        for line_text in qrc_text.split('\n'):
-            line_text = line_text.strip()
-            if not line_text:
+class LyricsLine:
+    """逐行歌词单元"""
+    def __init__(self, start: int, end: int, words: List[LyricsWord]):
+        self.start = start
+        self.end = end
+        self.words = words
+
+    def __repr__(self):
+        return f"LyricsLine(start={self.start}, end={self.end}, words={len(self.words)})"
+
+
+QRC_MAGICHEADER = b"\x98%\xb0\xac\xe3\x02\x83h\xe8\xfcl"
+
+_QRC_PATTERN = re.compile(r'<Lyric_1 LyricType="1" LyricContent="(?P<content>.*?)"/>', re.DOTALL)
+_TAG_SPLIT_PATTERN = re.compile(r"^\[(\w+):([^\]]*)\]$")
+_LINE_SPLIT_PATTERN = re.compile(r"^\[(\d+),(\d+)\](.*)$")
+_WORD_SPLIT_PATTERN = re.compile(r"(?:\[\d+,\d+\])?(?P<content>(?:(?!\(\d+,\d+\)).)*)\((?P<start>\d+),(?P<duration>\d+)\)")
+_WORD_TIMESTAMP_PATTERN = re.compile(r"^\(\d+,\d+\)$")
+
+
+def qrc2data(s_qrc: str) -> Tuple[dict, List[LyricsLine]]:
+    """将 QRC XML 格式解析为歌词行列表"""
+    qrc_match = _QRC_PATTERN.search(s_qrc)
+    if not qrc_match or not qrc_match.group("content"):
+        return {}, []
+
+    tags: dict[str, str] = {}
+    lrc_list: list[LyricsLine] = []
+
+    for raw_line in qrc_match.group("content").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        line_match = _LINE_SPLIT_PATTERN.match(line)
+        if line_match:
+            line_start, line_duration, line_content = line_match.groups()
+            line_start = int(line_start)
+            line_end = line_start + int(line_duration)
+
+            if line_content.startswith("(") and line_content.endswith(")") and _WORD_TIMESTAMP_PATTERN.match(line_content):
+                lrc_list.append(LyricsLine(line_start, line_end, []))
                 continue
-            
-            # 跳过元数据标签
-            if line_text.startswith('[') and ':' in line_text and ']' in line_text:
-                tag_end = line_text.index(']')
-                tag_content = line_text[1:tag_end]
-                if ':' in tag_content and not ',' in tag_content:
-                    # 这是元数据标签（如 [ti:标题]），不是歌词行
-                    continue
-            
-            # 匹配行级时间戳
-            match = cls.LINE_PATTERN.match(line_text)
-            if not match:
-                continue
-            
-            line_start = int(match.group(1))
-            line_duration = int(match.group(2))
-            line_end = line_start + line_duration
-            line_content = match.group(3)
-            
-            # 解析逐字时间戳
-            words = []
-            full_text = ""
-            
-            # 查找所有 文字(时间,持续) 模式
-            for word_match in cls.WORD_PATTERN.finditer(line_content):
-                text = word_match.group(1)
-                word_start = int(word_match.group(2))
-                word_duration = int(word_match.group(3))
-                word_end = word_start + word_duration
-                
-                if text:  # 只添加非空文本
-                    words.append({
-                        "text": text,
-                        "start": line_start + word_start,  # 转换为绝对时间
-                        "end": line_start + word_end
-                    })
-                    full_text += text
-            
-            # 如果没有逐字信息，提取纯文本
+
+            words = [
+                LyricsWord(
+                    int(word_match.group("start")),
+                    int(word_match.group("start")) + int(word_match.group("duration")),
+                    word_match.group("content"),
+                )
+                for word_match in _WORD_SPLIT_PATTERN.finditer(line_content)
+                if word_match.group("content") != "\r"
+            ]
             if not words:
-                # 移除所有时间戳标记，获取纯文本
-                full_text = cls.WORD_PATTERN.sub(r'\1', line_content)
-            
-            if full_text or words:  # 只添加有内容的行
-                lines.append({
-                    "start": line_start,
-                    "end": line_end,
-                    "text": full_text,
-                    "words": words
-                })
-        
-        logger.debug(f"QRC 解析完成：{len(lines)} 行")
-        return lines
-    
-    @classmethod
-    def parse_smart(cls, qrc_text: str) -> Tuple[str, List[dict]]:
-        """智能解析 QRC（兼容 XML 包裹格式）
-        
-        Args:
-            qrc_text: QRC 文本（可能被 XML 包裹）
-            
-        Returns:
-            (lyric_type, lines) - 歌词类型和解析后的行
-        """
-        # 处理 XML 包裹的情况
-        if qrc_text.strip().startswith('<?xml') or '<Lyric_1' in qrc_text:
-            # 提取 LyricContent 属性
-            import xml.etree.ElementTree as ET
-            try:
-                root = ET.fromstring(qrc_text)
-                lyric_content = root.get('LyricContent', '')
-                if lyric_content:
-                    qrc_text = lyric_content
-                    logger.debug("从 XML 中提取 LyricContent")
-            except ET.ParseError:
-                # 如果 XML 解析失败，尝试正则提取
-                match = re.search(r'LyricContent="([^"]*)"', qrc_text)
-                if match:
-                    qrc_text = match.group(1)
-                    logger.debug("通过正则从 XML 中提取 LyricContent")
-        
-        lines = cls.parse(qrc_text)
-        
-        # 判断歌词类型
-        lyric_type = "VERBATIM" if any(line["words"] for line in lines) else "LINEBYLINE"
-        
-        return lyric_type, lines
+                words = [LyricsWord(line_start, line_end, line_content)]
+
+            lrc_list.append(LyricsLine(line_start, line_end, words))
+        else:
+            tag_split_content = re.findall(_TAG_SPLIT_PATTERN, line)
+            if tag_split_content:
+                tags[tag_split_content[0][0]] = tag_split_content[0][1]
+
+    return tags, lrc_list
 
 
-def parse_qrc(qrc_text: str) -> List[dict]:
-    """便捷函数：解析 QRC 歌词"""
-    return QrcParser.parse(qrc_text)
+def parse_lrc(lrc_text: str) -> Tuple[dict, List[LyricsLine]]:
+    """解析 LRC 格式歌词"""
+    tags: dict[str, str] = {}
+    lines: list[LyricsLine] = []
+    stamp_re = re.compile(r"\[(\d+):(\d{1,2})[.:](\d{1,3})\]")
+
+    for raw in lrc_text.splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+
+        stamps: list[int] = []
+        pos = 0
+        while pos < len(raw):
+            m = stamp_re.match(raw, pos)
+            if not m:
+                break
+            ms = int(m.group(1)) * 60000 + int(m.group(2)) * 1000 + int(m.group(3).ljust(3, "0")[:3])
+            stamps.append(ms)
+            pos = m.end()
+
+        if stamps:
+            text = raw[pos:]
+            for ms in stamps:
+                lines.append(LyricsLine(ms, None, [LyricsWord(ms, None, text)]))
+        else:
+            tag_match = _TAG_SPLIT_PATTERN.match(raw)
+            if tag_match:
+                tags[tag_match.group(1)] = tag_match.group(2)
+
+    return tags, lines
+
+
+def qrc_str_parse(lyric: str) -> Tuple[dict, List[LyricsLine]]:
+    """智能解析 QRC 歌词（自动检测 XML 或 LRC 格式）"""
+    if re.search(r'<Lyric_1 LyricType="1" LyricContent="(.*?)"/>', lyric, re.DOTALL):
+        return qrc2data(lyric)
+    if "[" in lyric and "]" in lyric:
+        try:
+            return parse_lrc(lyric)
+        except Exception:
+            pass
+    return {}, [LyricsLine(None, None, [LyricsWord(None, None, lyric)])]
+
+
+def judge_lyrics_type(lyrics: List[LyricsLine]) -> str:
+    """判断歌词类型：VERBATIM（逐字）或 LINEBYLINE（行级）"""
+    for line in lyrics:
+        if len(line.words) > 1:
+            return "VERBATIM"
+    return "LINEBYLINE"

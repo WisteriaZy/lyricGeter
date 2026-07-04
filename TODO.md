@@ -81,23 +81,15 @@
 
 #### 第 2 周：QQ 音乐 + 相似度恢复
 
-- [ ] **QQ 音乐 QRC 支持**（难度 ⭐⭐⭐⭐⭐）**⚠️ 搁置 - 技术难点未解决**
-  - [x] `fetcher/qqmusic.py`：搜索 + 歌词接口（已完成，基于 LDDC 实现）
-  - [x] `parser/qrc.py`：解析 QRC 格式（已完成）
-  - [x] `converter.py`：QRC → SPL 转换（已完成）
-  - [ ] `decryptor/qrc.py`：自定义 3DES-ECB + zlib 解密（**阻塞中**）
-    - [x] 完整移植 LDDC-Android 的 3DES 实现（S-Box、置换表、密钥调度）
-    - [x] 修复位操作函数（`bitnum`、`bitnumIntl`、`bitnumIntr`）
-    - [x] 修复初始置换和逆置换
-    - [x] 修复 `sboxBit` 函数实现
-    - [ ] **当前问题**：解密后的数据无法被 zlib 解压（`invalid code lengths set`）
-      - 可能原因：密钥调度、F 函数、或其他细节实现差异
-      - 详细状态：`docs/QRC_DECRYPTION_STATUS.md`
-  - [ ] **后续计划**（长期）：
-    - 选项 A：寻找现有 Python QRC 解密库
-    - 选项 B：使用 jpype/pyjnius 调用 LDDC-Android 的 Kotlin 代码
-    - 选项 C：请求 LDDC 社区协助调试或提供 Python 移植
-  - **优先级降低**：YRC + KRC 已覆盖大部分逐字歌词需求
+- [x] **QQ 音乐 QRC 支持** ✅ **已完成 2026-07-04**
+  - [x] `fetcher/qqmusic.py`：搜索 + 歌词接口（基于 LDDC Python 实现）
+  - [x] `parser/qrc.py`：解析 QRC 格式（XML + LRC 兼容）
+  - [x] `converter.py`：QRC → SPL 转换（逐字时间戳 + 翻译）
+  - [x] `decryptor/qrc.py`：3DES-ECB + zlib 解密（直接移植 LDDC Python 代码）
+    - **根因修复**：`inverse_permutation` 函数的字节排列和 s0/s1 交替顺序错误
+    - 改用 LDDC Python 项目的完整实现，彻底解决解密问题
+  - [x] 端到端测试：Take Me Hand - DAISHI DANCE（73 行逐字 + 翻译）
+  - **三大平台逐字歌词全部完成**
 
 - [x] **恢复相似度过滤** ✅ **已完成 2026-07-03**
   - [x] 重构 `fetcher/base.py`：`LyricResult` 新增 `matched_title`, `matched_artist` 字段
