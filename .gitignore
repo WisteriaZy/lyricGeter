@@ -54,6 +54,7 @@ htmlcov/
 *.ogg
 *.wav
 *.lrc.bak
+.lyricgeter.json
 failed.log
 
 # 保留 input/ 目录结构但忽略音频文件

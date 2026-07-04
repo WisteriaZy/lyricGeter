@@ -111,6 +111,7 @@ lyricGeter/
 ├── matcher.py         # 格式质量评分、策略调度
 ├── converter.py       # LRC/YRC/KRC/QRC/TTML → SPL 格式转换
 ├── writer.py          # 写入 SPL 到音频标签
+├── state.py           # 断点续传状态管理
 ├── ui.py              # 终端确认/编辑界面
 └── example/
     └── lyricLoader.ts # TypeScript 参考实现（仅供参考）
@@ -258,6 +259,16 @@ class LyricsFetcher(ABC):
 - 写入前必须调用 `ui.confirm()` 获取用户确认
 - `existing_lyric` 参数用于触发备份
 
+### `state.py` - 断点续传
+
+**职责**：
+- 在目标目录下维护 `.lyricgeter.json` 状态文件
+- 记录已处理文件的相对路径集合
+- 每处理完一个文件调用 `mark_processed()` 立即保存
+- 全部完成后调用 `clear()` 删除状态文件
+
+**仅目录处理启用**，单文件处理不创建状态文件。
+
 ### `ui.py` - 终端交互
 
 **职责**：
@@ -363,6 +374,7 @@ ruff format .
 - [x] 交互式预览和确认
 - [x] 标签写入和备份
 - [x] 外部歌词优先级调整
+- [x] 断点续传（目录批处理进度保存与恢复）
 
 ### ⚠️ 已知限制
 

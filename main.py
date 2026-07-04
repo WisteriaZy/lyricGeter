@@ -22,6 +22,7 @@ from fetcher.base import LyricResult, LyricsFetcher, SongCandidate
 from scanner import scan, TrackInfo
 from matcher import find_all, similarity_score
 from writer import clear_lyrics, write_spl
+from state import BatchState
 from ui import CLEAR_LYRICS, MIN_LYRIC_LINES, SEARCH_AGAIN, console as ui_console, summarize_result
 
 _PROVIDER_MAP = {
@@ -301,6 +302,18 @@ def _choose_no_candidate_action(track: TrackInfo) -> str | None:
     return selection if isinstance(selection, str) else None
 
 
+def _choose_resume(done: int, total: int) -> str:
+    """询问用户是否继续上次的批处理进度。"""
+    remaining = total - done
+    choices = [
+        (f"继续处理剩余 {remaining} 个", "resume"),
+        ("全部重新开始", "restart"),
+        ("取消", "cancel"),
+    ]
+    selection = _choose("检测到上次未完成的批处理，是否继续？", choices)
+    return selection if isinstance(selection, str) else "cancel"
+
+
 def _confirm_interactive_track(
     track: TrackInfo,
     candidates: list[LyricResult],
@@ -371,16 +384,59 @@ def main(
         err_console.print(f"未找到支持的音乐文件：{path}")
         raise SystemExit(1)
 
-    ui_console.print(f"\n[bold]共扫描到 {len(tracks)} 个文件[/]\n")
+    # 断点续传：仅目录处理时启用
+    target_dir = path if path.is_dir() else None
+    state = BatchState(target_dir) if target_dir else None
+
+    if state:
+        if state.exists():
+            state.load()
+        state.total = len(tracks)
+
+        done = sum(1 for t in tracks if state.is_processed(state.rel_path(t.path)))
+        remaining = len(tracks) - done
+
+        if done > 0 and remaining > 0:
+            if auto:
+                ui_console.print(f"[dim]检测到上次进度 {done}/{len(tracks)}，自动继续[/]\n")
+            else:
+                choice = _choose_resume(done, len(tracks))
+                if choice == "cancel":
+                    return
+                if choice == "restart":
+                    state.init(len(tracks))
+                    done = 0
+                    remaining = len(tracks)
+        elif done > 0 and remaining == 0:
+            state.clear()
+            ui_console.print("[green]上次批处理已全部完成，进度已清除[/]")
+            return
+
+        state.save()
+
+        if done > 0:
+            ui_console.print(f"\n[bold]共 {len(tracks)} 个文件，已完成 {done}，剩余 {remaining} 个待处理[/]\n")
+        else:
+            ui_console.print(f"\n[bold]共扫描到 {len(tracks)} 个文件[/]\n")
+    else:
+        ui_console.print(f"\n[bold]共扫描到 {len(tracks)} 个文件[/]\n")
+
     manual_fetchers = _build_fetchers(netease, kugou, qqmusic, amll)
 
     for index, track in enumerate(tracks, 1):
         label = track.path.name
         display_label = f"{track.artist} - {track.title}" if track.title else label
+        rel = state.rel_path(track.path) if state else None
+
+        if state and state.is_processed(rel):
+            continue
+
         ui_console.print(f"\n[bold]({index}/{len(tracks)}) {display_label}[/]")
 
         if not track.title:
             ui_console.print(f"[dim]{label}[/]  →  跳过（无元数据标题）")
+            if state:
+                state.mark_processed(rel)
             continue
 
         try:
@@ -404,6 +460,8 @@ def main(
                 ui_console.print(f"[dim]{label}[/]  →  未找到歌词")
                 continue
             _apply_auto_result(track, candidates[0], dry_run)
+            if state:
+                state.mark_processed(rel)
             continue
 
         try:
@@ -414,13 +472,25 @@ def main(
                 threshold,
                 dry_run,
             )
+            if state:
+                state.mark_processed(rel)
         except SystemExit:
             ui_console.print("\n[yellow]已退出[/]")
+            if state:
+                ui_console.print(f"[dim]进度已保存：{state.processed_count}/{state.total}[/]")
             return
         except Exception as e:
             ui_console.print(f"[red]错误[/] {label}: {e}")
 
-    ui_console.print("\n[bold green]完成[/]")
+    if state:
+        unmarked = sum(1 for t in tracks if not state.is_processed(state.rel_path(t.path)))
+        if unmarked == 0:
+            state.clear()
+            ui_console.print("\n[bold green]完成[/]")
+        else:
+            ui_console.print(f"\n[bold green]完成[/] [dim]（{unmarked} 个未找到歌词，下次可重试）[/]")
+    else:
+        ui_console.print("\n[bold green]完成[/]")
 
 
 if __name__ == "__main__":
