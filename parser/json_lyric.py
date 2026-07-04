@@ -37,6 +37,8 @@ class JsonLyricParser:
             try:
                 data = json.loads(line)
                 time_ms = data.get("t", 0)
+                if time_ms is None:
+                    time_ms = 0
                 content_arr = data.get("c", [])
                 
                 # 合并所有文本片段

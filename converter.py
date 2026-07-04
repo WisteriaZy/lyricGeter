@@ -23,6 +23,8 @@ def _parse_ms(m: int, s: int, frac_str: str) -> int:
 
 def _ms_to_stamp(ms: int) -> str:
     """毫秒 → [mm:ss.xx] 格式。毫秒部分：最少1位、最多6位，通常保留2位（10ms精度）。"""
+    if ms is None:
+        ms = 0
     m, rem = divmod(ms, 60_000)
     s, ms_part = divmod(rem, 1_000)
     # 保留2位毫秒（10ms 精度），移除尾部的 0
