@@ -78,50 +78,119 @@ def _merge_translation(main_lines: list[_LrcLine], trans_lrc: str) -> dict[int, 
 
 def _merge_translation_to_spl(spl_content: str, trans_lrc: str) -> str:
     """将翻译歌词合并到 SPL 逐字歌词中。
-    
+
     SPL 翻译格式：主歌词后紧跟翻译行，省略时间戳。
-    
-    使用容差匹配：允许 ±500ms 的时间戳误差，因为网易云翻译 LRC 和逐字歌词时间戳可能不完全同步。
+
+    使用最近邻匹配：容差 ±2000ms，避免 YRC 与翻译 LRC 的时间戳偏移导致漏匹配。
+    已匹配的翻译行会被标记，防止重复匹配。
     """
     # 解析翻译 LRC，构建 [(时间戳, 翻译文本)] 列表
     trans_list: list[tuple[int, str]] = []
     for line in _parse_lrc(trans_lrc):
         if line.text.strip():
-            # 使用第一个时间戳
             trans_list.append((line.stamps[0], line.text.strip()))
-    
+
     if not trans_list:
         return spl_content
-    
-    # 解析 SPL 主歌词，提取每行的行首时间戳
+
+    used: set[int] = set()
     out_lines: list[str] = []
     for spl_line in spl_content.splitlines():
         spl_line = spl_line.strip()
         if not spl_line:
             continue
-        
-        # 提取行首时间戳
+
         match = _STAMP_RE.match(spl_line)
         if match:
             line_start_ms = _parse_ms(int(match.group(1)), int(match.group(2)), match.group(3))
             out_lines.append(spl_line)
-            
-            # 容差匹配：找到最接近的翻译（±500ms 范围内）
-            best_trans = None
-            min_diff = 500  # 最大容差 500ms
-            
-            for trans_ms, trans_text in trans_list:
+
+            # 最近邻匹配：找最近的未使用翻译（±2000ms）
+            best_idx = -1
+            min_diff = 2000
+            for i, (trans_ms, trans_text) in enumerate(trans_list):
+                if i in used:
+                    continue
                 diff = abs(trans_ms - line_start_ms)
                 if diff < min_diff:
                     min_diff = diff
-                    best_trans = trans_text
-            
-            if best_trans:
-                out_lines.append(best_trans)
+                    best_idx = i
+
+            if best_idx >= 0:
+                used.add(best_idx)
+                out_lines.append(trans_list[best_idx][1])
         else:
             out_lines.append(spl_line)
-    
-    return '\n'.join(out_lines)
+
+    return "\n".join(out_lines)
+
+
+def extract_translation_lrc(result: LyricResult) -> str | None:
+    """从任意 LyricResult 提取翻译歌词的 LRC 文本。
+
+    - 网易云等：result.translation 直接是 LRC 文本
+    - 酷狗 KRC：翻译在 content['ts'] 中，转换为 LRC 文本
+    """
+    # 网易云等：translation 字段直接是 LRC 文本
+    if result.translation:
+        return result.translation
+    # 酷狗 KRC：翻译在 content['ts'] 中
+    if isinstance(result.content, dict) and "ts" in result.content:
+        ts_lines = result.content["ts"]
+        if not ts_lines:
+            return None
+        lines = []
+        for line in ts_lines:
+            text = line.words[0].text if line.words else ""
+            if text.strip():
+                lines.append(f"{_ms_to_stamp(line.start)}{text}")
+        return "\n".join(lines) if lines else None
+    return None
+
+
+def _merge_translation_sequential(spl: str, translation_lrc: str) -> str:
+    """按行顺序合并翻译到 SPL（用于跨源时间戳不匹配的情况）。
+
+    跳过翻译中的元数据行，按行号 1:1 匹配主歌词。
+    """
+    # 解析翻译 LRC，提取纯文本（跳过元数据）
+    trans_texts: list[str] = []
+    for line in _parse_lrc(translation_lrc):
+        if line.text.strip():
+            trans_texts.append(line.text.strip())
+
+    if not trans_texts:
+        return spl
+
+    # 按顺序合并：第 i 个翻译对应第 i 行主歌词
+    out_lines: list[str] = []
+    spl_lines = [l for l in spl.splitlines() if l.strip()]
+    for i, spl_line in enumerate(spl_lines):
+        out_lines.append(spl_line)
+        if i < len(trans_texts):
+            out_lines.append(trans_texts[i])
+
+    return "\n".join(out_lines)
+
+
+def merge_translation(spl: str, translation_lrc: str) -> str:
+    """将翻译 LRC 合并到 SPL 歌词中（跨源翻译合并的公开接口）。
+
+    优先使用时间戳容差匹配（同源场景），匹配率低时回退到顺序匹配（跨源场景）。
+    """
+    # 先尝试时间戳容差匹配
+    timestamp_result = _merge_translation_to_spl(spl, translation_lrc)
+
+    # 统计匹配率
+    result_lines = [l for l in timestamp_result.splitlines() if l.strip()]
+    spl_line_count = sum(1 for l in spl.splitlines() if l.strip() and l.strip().startswith("["))
+    trans_line_count = sum(1 for l in result_lines if l.strip() and not l.strip().startswith("["))
+
+    # 匹配率低于 30% 时回退到顺序匹配
+    if spl_line_count > 0 and trans_line_count < spl_line_count * 0.3:
+        return _merge_translation_sequential(spl, translation_lrc)
+
+    return timestamp_result
 
 
 def _yrc_to_spl(content: str) -> str:

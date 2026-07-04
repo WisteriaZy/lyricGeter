@@ -14,7 +14,7 @@ from rich.text import Text
 
 from fetcher.base import LyricFormat, LyricResult
 
-from converter import to_spl
+from converter import to_spl, extract_translation_lrc, merge_translation
 
 console = Console(legacy_windows=False)
 
@@ -146,6 +146,49 @@ def _simple_select(prompt: str, choices: list[tuple[str, object]]) -> object:
     return None
 
 
+def _strip_translation_from_spl(spl: str) -> str:
+    """移除 SPL 中的翻译行（无时间戳行），仅保留带时间戳的主歌词行。"""
+    return "\n".join(
+        line for line in spl.splitlines()
+        if line.strip() and _line_has_timestamp(line.strip())
+    )
+
+
+def _select_translation_source(
+    candidates: list[LyricResult],
+    exclude_index: int,
+    use_questionary: bool,
+) -> str | None:
+    """让用户选择翻译来源，返回翻译 LRC 文本或 None。"""
+    trans_choices: list[tuple[str, int]] = []
+    for i, result in enumerate(candidates):
+        if i == exclude_index:
+            continue
+        trans_lrc = extract_translation_lrc(result)
+        if trans_lrc:
+            line_count, _, _ = summarize_result(result)
+            label = f"{result.source_name} - 有翻译 ({line_count}行)"
+            trans_choices.append((label, i))
+
+    if not trans_choices:
+        console.print("[yellow]没有其他带翻译的候选歌词可合并[/]")
+        return None
+
+    trans_choices.append(("取消（不合并翻译）", -1))
+
+    if use_questionary:
+        from questionary import Choice
+        choices = [Choice(label, value=idx) for label, idx in trans_choices]
+        sel = questionary.select("选择翻译来源：", choices=choices).ask()
+    else:
+        sel = _simple_select("选择翻译来源：", trans_choices)
+
+    if sel is None or sel == -1:
+        return None
+
+    return extract_translation_lrc(candidates[sel])
+
+
 def confirm_with_candidates(
     candidates: list[LyricResult],
     title: str,
@@ -237,64 +280,75 @@ def confirm_with_candidates(
             console.print("[dim]已选择按纯音乐处理，将清除歌词标签[/]")
             return CLEAR_LYRICS
 
-        # 第二步：预览并确认
+        # 第二步：生成基础 SPL，进入操作循环（允许合并翻译后继续操作）
         result = candidates[selection]
         _, _, spl = summarize_result(result)
 
-        _render_preview(spl, title, artist, result)
+        while True:  # 操作循环
+            _render_preview(spl, title, artist, result)
 
-        if dry_run:
-            console.print("[dim]（dry-run 模式，不写入）[/]")
-            return spl
+            if dry_run:
+                console.print("[dim]（dry-run 模式，不写入）[/]")
+                return spl
 
-        # 第三步：操作选择
-        if use_questionary:
-            try:
-                action = questionary.select(
-                    "操作：",
-                    choices=[
-                        questionary.Choice("接受并写入", value="accept"),
-                        questionary.Choice("返回重新选择", value="back"),
-                        questionary.Choice("手动编辑后写入", value="edit"),
-                        questionary.Choice("再次搜索并选择歌曲", value="search_again"),
-                        questionary.Choice("按纯音乐处理（清除歌词标签）", value="instrumental"),
-                        questionary.Choice("跳过此文件", value="skip"),
-                        questionary.Choice("退出程序", value="quit"),
-                    ],
-                ).ask()
-            except Exception:
-                use_questionary = False
-                continue
-        else:
-            action_choices = [
-                ("接受并写入", "accept"),
-                ("返回重新选择", "back"),
-                ("手动编辑后写入", "edit"),
-                ("再次搜索并选择歌曲", "search_again"),
-                ("按纯音乐处理（清除歌词标签）", "instrumental"),
-                ("跳过此文件", "skip"),
-                ("退出程序", "quit"),
-            ]
-            action = _simple_select("操作：", action_choices)
-            if action is None:
-                # 无法交互，默认接受
-                console.print("[dim]无法交互，自动接受[/]")
-                action = "accept"
+            # 第三步：操作选择
+            if use_questionary:
+                try:
+                    action = questionary.select(
+                        "操作：",
+                        choices=[
+                            questionary.Choice("接受并写入", value="accept"),
+                            questionary.Choice("选择翻译来源合并", value="merge_translation"),
+                            questionary.Choice("返回重新选择", value="back"),
+                            questionary.Choice("手动编辑后写入", value="edit"),
+                            questionary.Choice("再次搜索并选择歌曲", value="search_again"),
+                            questionary.Choice("按纯音乐处理（清除歌词标签）", value="instrumental"),
+                            questionary.Choice("跳过此文件", value="skip"),
+                            questionary.Choice("退出程序", value="quit"),
+                        ],
+                    ).ask()
+                except Exception:
+                    use_questionary = False
+                    continue
+            else:
+                action_choices = [
+                    ("接受并写入", "accept"),
+                    ("选择翻译来源合并", "merge_translation"),
+                    ("返回重新选择", "back"),
+                    ("手动编辑后写入", "edit"),
+                    ("再次搜索并选择歌曲", "search_again"),
+                    ("按纯音乐处理（清除歌词标签）", "instrumental"),
+                    ("跳过此文件", "skip"),
+                    ("退出程序", "quit"),
+                ]
+                action = _simple_select("操作：", action_choices)
+                if action is None:
+                    # 无法交互，默认接受
+                    console.print("[dim]无法交互，自动接受[/]")
+                    action = "accept"
 
-        if action is None or action == "quit":
-            raise SystemExit(0)
-        if action == "skip":
-            return None
-        if action == "back":
-            continue  # 回到循环开始，重新选择
-        if action == "search_again":
-            return SEARCH_AGAIN
-        if action == "instrumental":
-            return CLEAR_LYRICS
-        if action == "edit":
-            edited = _open_editor(spl)
-            return edited if edited.strip() else None
-        return spl  # accept
+            if action is None or action == "quit":
+                raise SystemExit(0)
+            if action == "skip":
+                return None
+            if action == "back":
+                break  # 回到外层循环，重新选择候选
+            if action == "search_again":
+                return SEARCH_AGAIN
+            if action == "instrumental":
+                return CLEAR_LYRICS
+            if action == "merge_translation":
+                trans_lrc = _select_translation_source(
+                    candidates, selection, use_questionary
+                )
+                if trans_lrc:
+                    stripped = _strip_translation_from_spl(spl)
+                    spl = merge_translation(stripped, trans_lrc)
+                continue  # 重新渲染预览
+            if action == "edit":
+                edited = _open_editor(spl)
+                return edited if edited.strip() else None
+            return spl  # accept
 
 
 def confirm(
