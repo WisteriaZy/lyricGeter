@@ -62,7 +62,7 @@ class NetEaseWordLyricParser:
             for word_match in self.WORD_RE.finditer(line):
                 word_time = int(word_match.group(1))
                 word_duration = int(word_match.group(2))
-                word_text = word_match.group(3).strip()
+                word_text = word_match.group(3)
                 if word_text:
                     words.append((word_time, word_duration, word_text))
             

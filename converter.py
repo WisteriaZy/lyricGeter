@@ -214,7 +214,7 @@ def _yrc_to_spl(content: str) -> str:
         
         for word in line.words:
             # 如果 word 只是纯文本（无逐字时间戳），直接拼接
-            if word.text.strip():
+            if word.text:
                 parts.append(word.text)
                 # 在每个字后添加时间戳（SPL 逐字格式）
                 if word.end > word.start:  # 有有效时间戳
