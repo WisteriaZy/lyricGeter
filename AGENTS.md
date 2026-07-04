@@ -6,6 +6,8 @@
 
 注意终端环境为PowerShell,此外注意中文编码问题
 
+请注意每次修改后一定要提交commit!!!
+
 ## 项目定位
 
 **lyricGeter** 是一个 **离线批量歌词嵌入工具**，面向本地播放器用户（Salt Player、foobar2000），为音乐库批量添加高质量同步歌词。
@@ -59,6 +61,7 @@
 写入前必须展示 SPL 预览，用户可选择：
 - **接受**：直接写入
 - **选择翻译来源合并**：从其他候选中挑翻译叠加到当前歌词（跨源翻译合并）
+- **LLM 校验翻译对齐**（可选）：合并后调用 OpenAI 兼容 API 简单核对翻译是否与原文对应，只报告明显错位的行
 - **跳过**：忽略此文件
 - **编辑**：在 `$EDITOR` 中手动修改
 - **退出**：终止程序
@@ -68,6 +71,17 @@
 **跨源翻译合并**：当某个候选有逐字歌词但无翻译、另一个候选有翻译时，
 用户可选择将翻译合并到逐字歌词中。合并算法优先用时间戳容差匹配（±2000ms），
 匹配率低于 30% 时自动回退到顺序匹配（按行号 1:1 对齐），解决跨平台时间戳偏移问题。
+
+**LLM 翻译对齐校验**（`llm_verify.py`，可选）：合并后在交互菜单里主动触发，
+把当前 SPL 拆成 (原文, 翻译) 配对发给 OpenAI 兼容 Chat Completions API，
+让模型只标注明显错位的行。配置通过项目根目录的 `.env` 文件（见 `.env.example`），
+仅读取该文件、不读取系统环境变量：
+- `OPENAI_API_KEY`（必填，留空则本功能不可用）
+- `OPENAI_BASE_URL`（可选，默认 `https://api.openai.com/v1`，可指向任意 OpenAI 兼容端点）
+- `LYRICGETER_LLM_MODEL`（可选，默认 `gpt-4o-mini`）
+
+由 `llm_verify` 内部用 `dotenv_values()` 直接解析 `.env`，不在启动时加载到 `os.environ`。
+为省 token，单次请求最多发送 60 对；只发配对而非整段 SPL，避免模型自行断行出错。
 
 ### 3. 外部歌词优先于内嵌（与播放器相反）
 
@@ -113,6 +127,7 @@ lyricGeter/
 ├── writer.py          # 写入 SPL 到音频标签
 ├── state.py           # 断点续传状态管理
 ├── ui.py              # 终端确认/编辑界面
+├── llm_verify.py      # LLM 翻译对齐校验（OpenAI 兼容，可选）
 └── example/
     └── lyricLoader.ts # TypeScript 参考实现（仅供参考）
 ```
@@ -275,6 +290,7 @@ class LyricsFetcher(ABC):
 - 用 `rich` 渲染 SPL 预览（时间戳高亮）
 - 用 `questionary` 实现选择菜单
 - 支持在 `$EDITOR` 中手动编辑
+- 整合可选的 LLM 翻译对齐校验（调用 `llm_verify`）
 
 **返回值**：
 - `str` → 用户接受的 SPL 内容（可能经过编辑）

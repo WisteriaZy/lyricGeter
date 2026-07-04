@@ -15,6 +15,7 @@ from rich.text import Text
 from fetcher.base import LyricFormat, LyricResult
 
 from converter import to_spl, extract_translation_lrc, merge_translation
+from llm_verify import llm_available, verify_translation_alignment
 
 console = Console(legacy_windows=False)
 
@@ -306,21 +307,33 @@ def confirm_with_candidates(
                 console.print("[dim]（dry-run 模式，不写入）[/]")
                 return spl
 
+            _, spl_has_translation = summarize_spl(spl, translation_hint=bool(result.translation))
+
             # 第三步：操作选择
             if use_questionary:
                 try:
+                    action_choices_q = [
+                        questionary.Choice("接受并写入", value="accept"),
+                        questionary.Choice("选择翻译来源合并", value="merge_translation"),
+                    ]
+                    if spl_has_translation:
+                        action_choices_q.append(
+                            questionary.Choice(
+                                "LLM 校验翻译对齐" + ("" if llm_available() else "（未配置）"),
+                                value="llm_verify",
+                            )
+                        )
+                    action_choices_q.extend([
+                        questionary.Choice("返回重新选择", value="back"),
+                        questionary.Choice("手动编辑后写入", value="edit"),
+                        questionary.Choice("再次搜索并选择歌曲", value="search_again"),
+                        questionary.Choice("按纯音乐处理（清除歌词标签）", value="instrumental"),
+                        questionary.Choice("跳过此文件", value="skip"),
+                        questionary.Choice("退出程序", value="quit"),
+                    ])
                     action = questionary.select(
                         "操作：",
-                        choices=[
-                            questionary.Choice("接受并写入", value="accept"),
-                            questionary.Choice("选择翻译来源合并", value="merge_translation"),
-                            questionary.Choice("返回重新选择", value="back"),
-                            questionary.Choice("手动编辑后写入", value="edit"),
-                            questionary.Choice("再次搜索并选择歌曲", value="search_again"),
-                            questionary.Choice("按纯音乐处理（清除歌词标签）", value="instrumental"),
-                            questionary.Choice("跳过此文件", value="skip"),
-                            questionary.Choice("退出程序", value="quit"),
-                        ],
+                        choices=action_choices_q,
                     ).ask()
                 except Exception:
                     use_questionary = False
@@ -329,13 +342,17 @@ def confirm_with_candidates(
                 action_choices = [
                     ("接受并写入", "accept"),
                     ("选择翻译来源合并", "merge_translation"),
+                ]
+                if spl_has_translation:
+                    action_choices.append(("LLM 校验翻译对齐", "llm_verify"))
+                action_choices.extend([
                     ("返回重新选择", "back"),
                     ("手动编辑后写入", "edit"),
                     ("再次搜索并选择歌曲", "search_again"),
                     ("按纯音乐处理（清除歌词标签）", "instrumental"),
                     ("跳过此文件", "skip"),
                     ("退出程序", "quit"),
-                ]
+                ])
                 action = _simple_select("操作：", action_choices)
                 if action is None:
                     # 无法交互，默认接受
@@ -359,7 +376,13 @@ def confirm_with_candidates(
                 if trans_lrc:
                     stripped = _strip_translation_from_spl(spl)
                     spl = merge_translation(stripped, trans_lrc)
+                    if llm_available():
+                        console.print("[dim]合并完成，可选「LLM 校验翻译对齐」检查结果[/]")
                 continue  # 重新渲染预览
+            if action == "llm_verify":
+                verdict = verify_translation_alignment(spl)
+                console.print(Panel(verdict, title="LLM 翻译对齐校验", border_style="magenta"))
+                continue  # 校验只看不动，回到操作循环
             if action == "edit":
                 edited = _open_editor(spl)
                 return edited if edited.strip() else None

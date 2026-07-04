@@ -79,3 +79,6 @@ debug_*.hex
 test_*.py
 check_*.py
 output.txt
+
+# Environment configuration
+.env
