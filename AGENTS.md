@@ -10,17 +10,18 @@
 
 **lyricGeter** 是一个 **离线批量歌词嵌入工具**，面向本地播放器用户（Salt Player、foobar2000），为音乐库批量添加高质量同步歌词。
 
-**当前状态（2026-07-03）**：
+**当前状态（2026-07-04）**：
 - ✅ 网易云 API 完整实现，支持逐字歌词（YRC）+ 翻译
 - ✅ 酷狗 API 完整实现，支持逐字歌词（KRC）+ 翻译 + 罗马音
-- ✅ 相似度过滤恢复正常（网易云、酷狗启用，阈值 70）
-- ✅ SPL 格式转换完全符合官方标准
 - ✅ QQ 音乐 QRC 完整实现，支持逐字歌词（QRC）+ 翻译 + 罗马音
+- ✅ AMLL TTML 数据库支持，通过歌曲 ID 获取 TTML 逐字歌词 + 翻译
+- ✅ 相似度过滤恢复正常（网易云、酷狗、QQ 音乐启用，阈值 70）
+- ✅ SPL 格式转换完全符合官方标准
 
 ### 核心价值
 
 - **批量处理**：整个目录一次处理完，而非播放时实时获取
-- **逐字优先**：主动获取 Word-level 逐字同步歌词（网易云 YRC、酷狗 KRC、QQ 音乐 QRC）
+- **逐字优先**：主动获取 Word-level 逐字同步歌词（网易云 YRC、酷狗 KRC、QQ 音乐 QRC、AMLL TTML）
 - **人工确认**：写入前预览 + 可编辑，避免错配和覆盖优质本地歌词
 - **SPL 标准**：输出符合 [Salt Player Lyrics 规范](https://moriafly.com/standards/spl.html)
 
@@ -35,7 +36,7 @@
 | **本地优先级** | 内嵌 > 外部文件（内嵌便于携带） | **外部 > 内嵌**（外部是用户手动放置，优先尊重） |
 | **平台策略** | byId（歌曲来自平台，精确匹配）+ byQuery | **仅 byQuery**（本地文件无平台 ID） |
 | **智能升级** | 有本地歌词时，仅当在线格式更优才请求 | **总是请求在线**，由用户决定是否覆盖 |
-| **TTML 支持** | 异步加载叠加层，运行时解析 | **转换为 SPL**，一次写入（暂不支持） |
+| **TTML 支持** | 异步加载叠加层，运行时解析 | **转换为 SPL**，一次写入（✅ AMLL 数据库） |
 
 **关键差异：文件内嵌优先级最低**  
 播放器中内嵌歌词便于携带（文件移动时歌词跟随），因此优先读取。但批处理工具中，外部 `.lrc`/`.spl` 文件通常是用户手动编辑或下载的精校版本，应优先保留，内嵌歌词仅作兜底。
@@ -94,10 +95,21 @@ lyricGeter/
 ├── scanner.py         # 扫描音乐文件、读取内嵌/外部歌词
 ├── fetcher/
 │   ├── base.py        # 抽象 LyricsFetcher 接口
-│   ├── synced.py      # syncedlyrics 封装（当前唯一实现）
+│   ├── synced.py      # syncedlyrics 封装（兑底）
+│   ├── netease.py     # 网易云原生 API（YRC 逐字）
+│   ├── kugou.py       # 酷狗原生 API（KRC 逐字）
+│   ├── qqmusic.py     # QQ 音乐原生 API（QRC 逐字）
+│   ├── amll.py        # AMLL TTML 数据库获取器
+│   └── __init__.py
+├── parser/
+│   ├── yrc.py         # 网易云逐字格式解析
+│   ├── krc.py         # 酷狗逐字格式解析
+│   ├── qrc.py         # QQ 音乐逐字格式解析
+│   ├── ttml.py        # TTML 格式解析（AMLL 数据库）
+│   ├── json_lyric.py  # 网易云 JSON 歌词格式
 │   └── __init__.py
 ├── matcher.py         # 格式质量评分、策略调度
-├── converter.py       # LRC/纯文本 → SPL 格式转换
+├── converter.py       # LRC/YRC/KRC/QRC/TTML → SPL 格式转换
 ├── writer.py          # 写入 SPL 到音频标签
 ├── ui.py              # 终端确认/编辑界面
 └── example/
@@ -221,11 +233,12 @@ class LyricsFetcher(ABC):
 ### `converter.py` - SPL 转换
 
 **职责**：
-- LRC/纯文本 → SPL 格式
+- LRC/YRC/KRC/QRC/TTML → SPL 格式转换
 - 补全显式结尾时间戳（每行 end = 下一行 start）
 - 逐字时间戳严格递增校验（不合格降级为行级）
 - 翻译行合并（时间戳容差匹配 ±2000ms + 顺序匹配回退）
 - 跨源翻译提取与合并（支持网易云 LRC 和酷狗 KRC 两种翻译来源）
+- AMLL TTML → SPL：逐字 span 转 SPL 逐字格式，翻译行紧跟主歌词行
 
 **关键函数**：
 - `_parse_lrc(lrc: str) -> list[_LrcLine]`：解析 LRC 行首时间戳
@@ -265,12 +278,14 @@ class LyricsFetcher(ABC):
 --netease / --no-netease      # 启用/禁用网易云（默认启用）
 --kugou / --no-kugou          # 启用/禁用酷狗（默认启用）
 --qqmusic / --no-qqmusic    # 启用/禁用 QQ 音乐（默认启用）
+--amll / --no-amll          # 启用/禁用 AMLL TTML 数据库（默认启用）
 --source [netease|lrclib|musixmatch|all]  # syncedlyrics 来源（默认 all）
 ```
 
 **设计理念**：
 - 使用正向参数（`--netease`）而非排除项（`--no-netease`），更直观
-- 网易云、酷狗、QQ 音乐默认启用
+- 网易云、酷狗、QQ 音乐、AMLL 默认启用
+- AMLL 优先级最高（先搜索网易云/QQ音乐获取歌曲 ID，再从 AMLL DB 下载 TTML）
 - `--source` 控制 syncedlyrics 的第三方来源（lrclib、musixmatch 等）
 
 ### 交互模式
@@ -361,9 +376,9 @@ ruff format .
    - **缓解**：使用 `--dry-run` 预览匹配结果，批量写入前检查错配
 
 3. **逐字歌词覆盖率依赖平台**
-   - **现状**：网易云 YRC + 酷狗 KRC + QQ 音乐 QRC 已完整实现
+   - **现状**：网易云 YRC + 酷狗 KRC + QQ 音乐 QRC + AMLL TTML 已完整实现
    - **原因**：部分歌曲仅提供行级同步歌词，即使原生平台也无逐字版本
-   - **改进**：三大平台互补，提高逐字覆盖率
+   - **改进**：四大平台互补，提高逐字覆盖率；AMLL TTML 数据库提供社区人工校验的高质量歌词
 
 ### 🚧 下一步（P0 任务）
 
@@ -373,11 +388,12 @@ ruff format .
 2. **✅ 酷狗 KRC 支持**（已完成 2026-07-03）
 3. **✅ 相似度过滤恢复**（已完成 2026-07-03）
 4. **✅ QQ 音乐 QRC 支持**（已完成 2026-07-04）
-5. **📋 项目文档完善**（进行中）
+5. **✅ AMLL TTML 数据库支持**（已完成 2026-07-04）
+6. **📋 项目文档完善**（进行中）
    - [ ] 更新 README 和 AGENTS.md
    - [ ] 清理调试文件
    - [ ] 提交代码到版本控制
-6. **📋 用户文档**（下一步）
+7. **📋 用户文档**（下一步）
    - [ ] 添加使用截图
    - [ ] 编写常见问题解答
    - [ ] 补充贡献指南

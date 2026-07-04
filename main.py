@@ -17,6 +17,7 @@ from rich.console import Console
 from fetcher import SyncedLyricsFetcher, NetEaseApi
 from fetcher.kugou import KugouFetcher
 from fetcher.qqmusic import QQMusicFetcher
+from fetcher.amll import AmllFetcher
 from fetcher.base import LyricResult, LyricsFetcher, SongCandidate
 from scanner import scan, TrackInfo
 from matcher import find_all, similarity_score
@@ -34,8 +35,11 @@ _SEARCH_NEW_QUERY = "__SEARCH_NEW_QUERY__"
 err_console = Console(stderr=True, style="red", legacy_windows=False)
 
 
-def _build_fetchers(use_netease: bool, use_kugou: bool, use_qqmusic: bool) -> list[LyricsFetcher]:
+def _build_fetchers(use_netease: bool, use_kugou: bool, use_qqmusic: bool, use_amll: bool = True) -> list[LyricsFetcher]:
     fetchers: list[LyricsFetcher] = []
+    # AMLL 优先级最高（TTML 逐字 + 翻译）
+    if use_amll:
+        fetchers.append(AmllFetcher())
     if use_netease:
         fetchers.append(NetEaseApi())
     if use_qqmusic:
@@ -211,15 +215,16 @@ def _fetch_results(
     use_netease: bool,
     use_kugou: bool,
     use_qqmusic: bool,
+    use_amll: bool = True,
 ) -> list[LyricResult]:
     """网络搜索阶段，返回所有候选结果。"""
     if not track.title:
         return []
-    
-    fetchers = _build_fetchers(use_netease, use_kugou, use_qqmusic)
+
+    fetchers = _build_fetchers(use_netease, use_kugou, use_qqmusic, use_amll)
     # syncedlyrics 作为兜底
     fetchers.append(fetcher)
-    
+
     return find_all(track, fetchers, threshold=threshold, prefer_local=prefer_local)
 
 
@@ -343,6 +348,7 @@ def _confirm_interactive_track(
 @click.option("--netease/--no-netease", default=True, show_default=True, help="启用/禁用网易云 API")
 @click.option("--kugou/--no-kugou", default=True, show_default=True, help="启用/禁用酷狗 API")
 @click.option("--qqmusic/--no-qqmusic", default=True, show_default=True, help="启用/禁用 QQ 音乐 API")
+@click.option("--amll/--no-amll", default=True, show_default=True, help="启用/禁用 AMLL TTML 数据库")
 def main(
     path: Path,
     auto: bool,
@@ -354,6 +360,7 @@ def main(
     netease: bool,
     kugou: bool,
     qqmusic: bool,
+    amll: bool,
 ) -> None:
     """为本地音乐文件获取并写入 SPL 歌词。\n\nPATH 可以是单个音乐文件或目录。"""
     providers = _PROVIDER_MAP.get(source.lower())
@@ -365,7 +372,7 @@ def main(
         raise SystemExit(1)
 
     ui_console.print(f"\n[bold]共扫描到 {len(tracks)} 个文件[/]\n")
-    manual_fetchers = _build_fetchers(netease, kugou, qqmusic)
+    manual_fetchers = _build_fetchers(netease, kugou, qqmusic, amll)
 
     for index, track in enumerate(tracks, 1):
         label = track.path.name
@@ -386,6 +393,7 @@ def main(
                     use_netease=netease,
                     use_kugou=kugou,
                     use_qqmusic=qqmusic,
+                    use_amll=amll,
                 )
         except Exception as e:
             candidates = []

@@ -300,6 +300,52 @@ def _json_lyric_to_spl(content: str) -> str:
     return '\n'.join(out_lines)
 
 
+def _ttml_to_spl(lines: list) -> str:
+    """将 TTML 解析结果转换为 SPL 格式
+
+    - 逐字 span 转为 SPL 逐字格式（行首 []，中间 <>）
+    - 翻译行紧跟主歌词行（无时间戳）
+    - 跳过背景人声（x-bg）和 Ruby 注音
+    - 行结束时间戳 = 下一行开始时间
+    """
+    if not lines:
+        return ""
+
+    out_lines: list[str] = []
+
+    for i, line in enumerate(lines):
+        parts: list[str] = []
+
+        # 逐字时间戳
+        if line.words and len(line.words) > 1:
+            for idx, word in enumerate(line.words):
+                if idx == 0:
+                    parts.append(_ms_to_stamp(word.start))
+                else:
+                    parts.append(f"<{_ms_to_stamp(word.start)[1:-1]}>")
+                parts.append(word.text)
+        elif line.words:
+            # 单 word（行级）
+            parts.append(_ms_to_stamp(line.start))
+            parts.append(line.words[0].text)
+        else:
+            continue
+
+        # 行结束时间戳
+        if i + 1 < len(lines):
+            parts.append(_ms_to_stamp(lines[i + 1].start))
+        else:
+            parts.append(_ms_to_stamp(line.end))
+
+        out_lines.append(''.join(parts))
+
+        # 翻译行（紧跟主歌词，无时间戳）
+        if line.translation:
+            out_lines.append(line.translation)
+
+    return '\n'.join(out_lines)
+
+
 def _qrc_to_spl(orig_lines: list, trans_lines: list = None, roma_lines: list = None) -> str:
     """将 QRC 解析结果转换为 SPL
     
@@ -411,6 +457,12 @@ def to_spl(result: LyricResult) -> str:
     - 逐字模式：校验严格递增，不合格则降级为行级
     - 翻译行：同时间戳，紧跟主歌词行后（省略时间戳）
     """
+    # AMLL TTML 格式
+    if result.source_name == "amll":
+        from parser.ttml import parse_ttml
+        _, ttml_lines = parse_ttml(result.content)
+        return _ttml_to_spl(ttml_lines)
+
     # QQ 音乐 QRC 格式
     if result.source_name == "qqmusic":
         from parser.qrc import qrc_str_parse

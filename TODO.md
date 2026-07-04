@@ -145,15 +145,18 @@
 
 ## 🔬 高级功能（长期）
 
-### TTML 支持
-**优先级：低**（YRC/QRC/KRC 已覆盖大部分逐字需求）
+### TTML 支持 (AMLL 数据库)
+**已完成 ✅**（2026-07-04）
 
-- [ ] 调研 TTML 格式规范（W3C 标准）
-- [ ] 评估 TTML → SPL 转换可行性
-- [ ] 网易云/QQ 音乐 TTML 接口逆向
-- [ ] 转换为 SPL 延迟逐字语法（`<mm:ss.xx>文字`）
+通过 AMLL TTML 数据库（GitHub raw）按歌曲 ID 获取 TTML 逐字歌词。
 
-**注**：TTML 是最高级格式，但平台支持有限，YRC/QRC 已能满足大部分需求
+- [x] `parser/ttml.py`：TTML XML 解析器，提取逐字时间戳 + 翻译 + 罗马音
+- [x] `fetcher/amll.py`：搜索网易云/QQ音乐获取歌曲 ID，从 AMLL DB 下载 TTML
+- [x] `converter.py`：TTML → SPL 转换（逐字 `[]`/`<>` + 翻译行）
+- [x] 舍弃 SPL 不支持的功能（背景人声 `x-bg`、对唱 `agent`、Ruby 注音）
+- [x] 保留 span 间空格（确保英文歌词可读性）
+- [x] 集成到 `main.py`，默认启用（`--amll/--no-amll`）
+- [x] 端到端测试：Take Me Hand - DAISHI DANCE（逐字 + 翻译）
 
 ### 智能匹配增强
 **优先级：低**
