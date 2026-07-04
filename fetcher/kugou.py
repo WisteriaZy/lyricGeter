@@ -361,7 +361,8 @@ class KugouFetcher(LyricsFetcher):
             translation=None,
             matched_title=song.title,
             matched_artist=song.artist,
-            score=0.0
+            score=0.0,
+            duration_ms=song.duration_ms,
         )
 
     def search(self, title: str, artist: str) -> Optional[LyricResult]:
@@ -406,7 +407,8 @@ class KugouFetcher(LyricsFetcher):
                 translation=None,  # KRC 的翻译已经在 lyrics_data['ts'] 中
                 matched_title=song['title'],
                 matched_artist=song['artist'],
-                score=0.0  # matcher.py 会计算相似度
+                score=0.0,  # matcher.py 会计算相似度
+                duration_ms=int(song.get('duration', 0) or 0) * 1000,
             )
         
         except Exception as e:

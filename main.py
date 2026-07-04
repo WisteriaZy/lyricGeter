@@ -32,6 +32,8 @@ _PROVIDER_MAP = {
     "all": None,  # None → 使用全部默认 provider
 }
 _SEARCH_NEW_QUERY = "__SEARCH_NEW_QUERY__"
+_CANCEL_SEARCH = "__CANCEL_SEARCH__"   # 取消再次搜索（questionary 不支持 value=None）
+_SKIP_TRACK = "__SKIP_TRACK__"         # 跳过此文件（同上）
 
 err_console = Console(stderr=True, style="red", legacy_windows=False)
 
@@ -138,9 +140,11 @@ def _search_song_candidates(
 def _choose_song_candidate(songs: list[SongCandidate]) -> int | str | None:
     choices = [(_song_label(song), i) for i, song in enumerate(songs)]
     choices.append(("换关键词再次搜索", _SEARCH_NEW_QUERY))
-    choices.append(("取消再次搜索", None))
+    choices.append(("取消再次搜索", _CANCEL_SEARCH))
     selection = _choose("选择要读取歌词的歌曲：", choices)
-    if isinstance(selection, int) or isinstance(selection, str) or selection is None:
+    if selection == _CANCEL_SEARCH:
+        return None
+    if isinstance(selection, int) or isinstance(selection, str):
         return selection
     return None
 
@@ -166,7 +170,7 @@ def _manual_search_result(
                 "下一步：",
                 [
                     ("换关键词再次搜索", _SEARCH_NEW_QUERY),
-                    ("取消再次搜索", None),
+                    ("取消再次搜索", _CANCEL_SEARCH),
                 ],
             )
             if selection == _SEARCH_NEW_QUERY:
@@ -293,12 +297,14 @@ def _choose_no_candidate_action(track: TrackInfo) -> str | None:
         [
             ("再次搜索并选择歌曲", SEARCH_AGAIN),
             ("按纯音乐处理（清除歌词标签）", CLEAR_LYRICS),
-            ("跳过此文件", None),
+            ("跳过此文件", _SKIP_TRACK),
             ("退出程序", "quit"),
         ],
     )
     if selection == "quit":
         raise SystemExit(0)
+    if selection == _SKIP_TRACK:
+        return None
     return selection if isinstance(selection, str) else None
 
 
@@ -330,6 +336,7 @@ def _confirm_interactive_track(
                 track.title,
                 track.artist,
                 dry_run=dry_run,
+                track_duration_ms=track.duration_ms,
             )
         else:
             final_spl = _choose_no_candidate_action(track)

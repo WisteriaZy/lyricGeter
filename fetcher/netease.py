@@ -36,7 +36,8 @@ class NetEaseApi(LyricsFetcher):
         return self._get_lyrics(
             song_info["id"],
             song_info["title"],
-            song_info["artist"]
+            song_info["artist"],
+            duration_ms=int(song_info.get("duration_ms", 0) or 0),
         )
     
     def search_songs(self, query: str, limit: int = 10) -> list[SongCandidate]:
@@ -93,7 +94,7 @@ class NetEaseApi(LyricsFetcher):
             song_id = int(song.source_id)
         except (TypeError, ValueError):
             return None
-        return self._get_lyrics(song_id, song.title, song.artist)
+        return self._get_lyrics(song_id, song.title, song.artist, duration_ms=song.duration_ms)
 
     def _search_song(self, title: str, artist: str) -> dict | None:
         """搜索歌曲，返回第一个结果的信息
@@ -145,18 +146,20 @@ class NetEaseApi(LyricsFetcher):
                     "id": first_song.get("id"),
                     "title": first_song.get("name", ""),
                     "artist": artist_names,
+                    "duration_ms": int(first_song.get("dt", 0) or 0),
                 }
         
         except Exception as e:
             return None
     
-    def _get_lyrics(self, song_id: int, matched_title: str, matched_artist: str) -> LyricResult | None:
+    def _get_lyrics(self, song_id: int, matched_title: str, matched_artist: str, duration_ms: int = 0) -> LyricResult | None:
         """获取歌词（含 YRC）
         
         Args:
             song_id: 歌曲 ID
             matched_title: 平台返回的歌曲标题
             matched_artist: 平台返回的艺术家
+            duration_ms: 平台返回的歌曲时长（毫秒）
         """
         path = "/api/song/lyric/v1"
         
@@ -216,6 +219,7 @@ class NetEaseApi(LyricsFetcher):
                     matched_title=matched_title,
                     matched_artist=matched_artist,
                     lrc_content=lrc_content if yrc_content and lrc_content else None,
+                    duration_ms=duration_ms,
                 )
         
         except Exception:

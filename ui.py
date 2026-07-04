@@ -29,6 +29,14 @@ CLEAR_LYRICS = "__CLEAR_LYRICS__"
 SEARCH_AGAIN = "__SEARCH_AGAIN__"
 
 
+def _format_duration(duration_ms: int) -> str:
+    """毫秒 → m:ss 格式，0 表示未知。"""
+    if not duration_ms:
+        return ""
+    total_seconds = duration_ms // 1000
+    return f"{total_seconds // 60}:{total_seconds % 60:02d}"
+
+
 def _line_has_timestamp(line: str) -> bool:
     return bool(_TIMESTAMP_LINE_RE.match(line))
 
@@ -70,9 +78,10 @@ def _candidate_label(result: LyricResult, index: int | None = None) -> str:
     line_count, has_translation, _ = summarize_result(result)
     format_text = Text.from_markup(_FORMAT_LABEL[result.format]).plain
     score_text = f" 相似度:{result.score:.0f}" if result.score > 0 and result.score < 100 else ""
+    duration_text = f" 时长 {_format_duration(result.duration_ms)}" if result.duration_ms else ""
     translation_text = "有翻译" if has_translation else "无翻译"
     prefix = f"{index}. " if index is not None else ""
-    return f"{prefix}{result.source_name} - {format_text} {line_count}行 {translation_text}{score_text}"
+    return f"{prefix}{result.source_name} - {format_text} {line_count}行 {translation_text}{duration_text}{score_text}"
 
 
 def _render_preview(spl: str, title: str, artist: str, result: LyricResult) -> None:
@@ -85,6 +94,8 @@ def _render_preview(spl: str, title: str, artist: str, result: LyricResult) -> N
     header.append_text(Text.from_markup(_FORMAT_LABEL[result.format]))
     line_count, has_translation = summarize_spl(spl, translation_hint=bool(result.translation))
     header.append(f"  {line_count}行  {'有翻译' if has_translation else '无翻译'}", style="dim")
+    if result.duration_ms:
+        header.append(f"  时长 {_format_duration(result.duration_ms)}", style="dim")
     if result.score > 0:
         header.append(f"  相似度: {result.score:.0f}", style="dim")
 
@@ -195,6 +206,7 @@ def confirm_with_candidates(
     artist: str,
     *,
     dry_run: bool = False,
+    track_duration_ms: int = 0,
 ) -> str | None:
     """
     展示多个候选歌词，让用户选择。
@@ -220,7 +232,10 @@ def confirm_with_candidates(
         console.print("[dim]（非交互式环境，自动选择最优结果）[/]")
         return spl
 
-    console.print(f"\n[bold]{title}[/]" + (f" — [dim]{artist}[/]" if artist else ""))
+    title_line = f"\n[bold]{title}[/]" + (f" — [dim]{artist}[/]" if artist else "")
+    if track_duration_ms:
+        title_line += f"  [dim]时长 {_format_duration(track_duration_ms)}[/]"
+    console.print(title_line)
     console.print(f"找到 {len(candidates)} 个候选歌词：\n")
 
     # 尝试使用 questionary，失败则回退到简单文本输入

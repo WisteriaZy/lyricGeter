@@ -262,6 +262,7 @@ class QQMusicFetcher(LyricsFetcher):
             translation=trans_lrc,
             matched_title=song.get("title", ""),
             matched_artist=song.get("artist", ""),
+            duration_ms=int(song.get("duration", 0) or 0) * 1000,
         )
 
     def __enter__(self):

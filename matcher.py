@@ -42,6 +42,7 @@ def find_all(
             format=local_format,
             source_name="local",
             score=100.0,
+            duration_ms=track.duration_ms,
         )]
 
     # 从所有 fetcher 获取结果
@@ -78,6 +79,7 @@ def find_all(
             format=local_format,
             source_name="local",
             score=100.0,
+            duration_ms=track.duration_ms,
         ))
 
     # 排序：格式优先级 > 相似度

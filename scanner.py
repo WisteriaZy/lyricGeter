@@ -69,6 +69,7 @@ class TrackInfo:
     embedded_lyric: str | None
     external_lyric: str | None
     embedded_format: LyricFormat | None
+    duration_ms: int = 0
 
     @property
     def best_local_lyric(self) -> tuple[str | None, LyricFormat | None]:
@@ -85,9 +86,15 @@ def scan_file(path: Path) -> TrackInfo:
     audio = mutagen.File(path, easy=True)
     title = ""
     artist = ""
+    duration_ms = 0
     if audio is not None:
         title = (audio.get("title") or [""])[0]
         artist = (audio.get("artist") or [""])[0]
+        # mutagen 的 info.length 是秒（float）
+        try:
+            duration_ms = int(round(audio.info.length * 1000))
+        except Exception:
+            duration_ms = 0
 
     embedded_lyric, embedded_format = _read_embedded(path)
     external_lyric = _read_external(path)
@@ -99,6 +106,7 @@ def scan_file(path: Path) -> TrackInfo:
         embedded_lyric=embedded_lyric,
         external_lyric=external_lyric,
         embedded_format=embedded_format,
+        duration_ms=duration_ms,
     )
 
 

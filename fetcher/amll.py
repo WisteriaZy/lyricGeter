@@ -74,6 +74,7 @@ class AmllFetcher(LyricsFetcher):
         platform: str,
         matched_title: str = "",
         matched_artist: str = "",
+        duration_ms: int = 0,
     ) -> Optional[LyricResult]:
         """将 TTML 文本解析为 LyricResult"""
         try:
@@ -106,6 +107,7 @@ class AmllFetcher(LyricsFetcher):
             translation=translation,
             matched_title=matched_title,
             matched_artist=matched_artist,
+            duration_ms=duration_ms,
         )
 
     def search(self, title: str, artist: str) -> Optional[LyricResult]:
@@ -120,7 +122,7 @@ class AmllFetcher(LyricsFetcher):
             ne_api = self._get_netease_api()
             ne_song = ne_api._search_song(title, artist)
             if ne_song:
-                platforms_to_try.append(("netease", str(ne_song["id"]), ne_song["title"], ne_song["artist"]))
+                platforms_to_try.append(("netease", str(ne_song["id"]), ne_song["title"], ne_song["artist"], int(ne_song.get("duration_ms", 0) or 0)))
         except Exception:
             pass
 
@@ -129,18 +131,18 @@ class AmllFetcher(LyricsFetcher):
             qq_api = self._get_qqmusic_api()
             qq_song = qq_api.search_song(title, artist)
             if qq_song:
-                platforms_to_try.append(("qqmusic", str(qq_song.get("id", "")), qq_song.get("title", ""), qq_song.get("artist", "")))
+                platforms_to_try.append(("qqmusic", str(qq_song.get("id", "")), qq_song.get("title", ""), qq_song.get("artist", ""), int(qq_song.get("duration", 0) or 0) * 1000))
         except Exception:
             pass
 
         # 逐个尝试 AMLL
-        for platform, song_id, matched_title, matched_artist in platforms_to_try:
+        for platform, song_id, matched_title, matched_artist, duration_ms in platforms_to_try:
             if not song_id:
                 continue
             ttml_text = self._fetch_ttml(platform, song_id)
             if ttml_text:
                 # 从 TTML 提取元数据中的匹配信息
-                return self._ttml_to_result(ttml_text, platform, matched_title, matched_artist)
+                return self._ttml_to_result(ttml_text, platform, matched_title, matched_artist, duration_ms=duration_ms)
 
         return None
 
@@ -210,4 +212,4 @@ class AmllFetcher(LyricsFetcher):
         if not ttml_text:
             return None
 
-        return self._ttml_to_result(ttml_text, platform, song.title, song.artist)
+        return self._ttml_to_result(ttml_text, platform, song.title, song.artist, duration_ms=song.duration_ms)

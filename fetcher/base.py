@@ -35,6 +35,7 @@ class LyricResult:
     matched_artist: str = ""         # 平台返回的艺术家（用于相似度评分）
     score: float = 0.0               # rapidfuzz 相似度分 (0-100)
     lrc_content: str | None = None          # 网易云 LRC 原文（用于 YRC 翻译对齐）
+    duration_ms: int = 0                  # 平台匹配到的歌曲时长（毫秒），0 表示未知
 
 
 class LyricsFetcher(ABC):
