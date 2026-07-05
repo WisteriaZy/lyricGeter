@@ -75,14 +75,55 @@ def summarize_result(result: LyricResult) -> tuple[int, bool, str]:
     return line_count, has_translation, spl
 
 
+def _visual_width(s: str) -> int:
+    """估算终端显示宽度：CJK 与全角字符算 2，其余算 1。"""
+    width = 0
+    for ch in s:
+        code = ord(ch)
+        if (
+            0x1100 <= code <= 0x115F        # Hangul Jamo
+            or 0x2E80 <= code <= 0x303E    # CJK 形意文字、标点
+            or 0x3041 <= code <= 0x33FF    # 假名/注音
+            or 0x3400 <= code <= 0x4DBF    # CJK 扩展 A
+            or 0x4E00 <= code <= 0x9FFF    # CJK 统一汉字
+            or 0xA000 <= code <= 0xA4CF    # 彝文音节
+            or 0xAC00 <= code <= 0xD7A3    # 韩文音节
+            or 0xF900 <= code <= 0xFAFF    # CJK 兼容表意
+            or 0xFE30 <= code <= 0xFE4F    # CJK 兼容形式
+            or 0xFF00 <= code <= 0xFF60    # 全角 ASCII
+            or 0xFFE0 <= code <= 0xFFE6    # 全角符号
+        ):
+            width += 2
+        else:
+            width += 1
+    return width
+
+
+def _pad_visual(s: str, target_width: int) -> str:
+    """按视觉宽度右补空格到 target_width；超出则原样返回。"""
+    pad = target_width - _visual_width(s)
+    return s + " " * pad if pad > 0 else s
+
+
 def _candidate_label(result: LyricResult, index: int | None = None) -> str:
     line_count, has_translation, _ = summarize_result(result)
     format_text = Text.from_markup(_FORMAT_LABEL[result.format]).plain
-    score_text = f" 相似度:{result.score:.0f}" if result.score > 0 and result.score < 100 else ""
-    duration_text = f" 时长 {_format_duration(result.duration_ms)}" if result.duration_ms else ""
+    score_text = f"相似度:{result.score:.0f}" if 0 < result.score < 100 else ""
+    duration_text = f"时长 {_format_duration(result.duration_ms)}" if result.duration_ms else ""
     translation_text = "有翻译" if has_translation else "无翻译"
+
+    # 按列对齐（视觉宽度補偿 CJK 双宽字符）
+    cols = [
+        _pad_visual(result.source_name, 12),  # 来源
+        _pad_visual(format_text, 8),          # 格式：逐字(4) 行级同步(8) 纯文本(6)
+        _pad_visual(f"{line_count}行", 6),    # 行数
+        _pad_visual(translation_text, 6),      # 翻译：有/无翻译 均 6
+        _pad_visual(duration_text, 10),        # 时长
+        score_text,                            # 相似度（末列不补齐）
+    ]
+    label = " ".join(cols).rstrip()
     prefix = f"{index}. " if index is not None else ""
-    return f"{prefix}{result.source_name} - {format_text} {line_count}行 {translation_text}{duration_text}{score_text}"
+    return f"{prefix}{label}"
 
 
 def _render_preview(spl: str, title: str, artist: str, result: LyricResult) -> None:

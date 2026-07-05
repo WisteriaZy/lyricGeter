@@ -200,7 +200,7 @@ class KugouApi:
                 "title": selected_song.get("songname", ""),
                 "artist": selected_song.get("singername", ""),
                 "album": selected_song.get("album_name", ""),
-                "duration": selected_song.get("duration", 0) * 1000  # 秒转毫秒
+                "duration": selected_song.get("duration", 0) or 0  # 酷狗 duration 为秒
             }
         
         except Exception as e:
