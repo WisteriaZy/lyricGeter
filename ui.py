@@ -315,7 +315,7 @@ def _render_strip_frame(lines: list[str], n: int, detected_n: int, n_total: int)
     if n != detected_n:
         status += f"  （自动检测 {detected_n} 行）"
     frame.append(status, style="bold yellow")
-    console.print(frame)
+    console.print(frame, no_wrap=True, overflow="ellipsis")
 
 
 def _strip_leading_interactive(spl: str) -> str | None:
@@ -394,7 +394,7 @@ def _strip_leading_simple(spl: str) -> str | None:
             frame.append("\n")
     if n_total > 25:
         frame.append(f"… 共 {n_total} 行\n", style="dim")
-    console.print(frame)
+    console.print(frame, no_wrap=True, overflow="ellipsis")
 
     try:
         raw = input(
@@ -417,6 +417,45 @@ def _strip_leading_simple(spl: str) -> str | None:
     console.print("[yellow]行数超出范围，已取消[/]")
     return None
 
+
+
+def _drop_redundant_translation(spl: str) -> tuple[str, int]:
+    """移除「翻译行与原行文本完全一致」的冗余翻译。
+
+    仅匹配「原文行带时间戳、紧跟的下一行无时间戳且文本与其完全相同」这一对子。
+    两行都是原文（都带时间戳）的重复句不受影响"""
+    lines = spl.splitlines()
+    if len(lines) < 2:
+        return spl, 0
+
+    out: list[str] = []
+    removed = 0
+    i = 0
+    while i < len(lines):
+        cur = lines[i].strip()
+        if not cur:
+            i += 1
+            continue
+        cur_has_ts = _line_has_timestamp(cur)
+        # 看下一行是否为紧随的翻译行且文本相同
+        if cur_has_ts and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt and not _line_has_timestamp(nxt):
+                # 剥除时间戳后比较
+                cur_text = _INLINE_TS_RE.sub("", cur).strip()
+                nxt_text = nxt.strip()
+                if cur_text and cur_text == nxt_text:
+                    # 冗余翻译，删除翻译行，保留原文行
+                    out.append(lines[i])
+                    removed += 1
+                    i += 2
+                    continue
+        out.append(lines[i])
+        i += 1
+
+    if removed == 0:
+        return spl, 0
+    return "\n".join(out), removed
 
 
 def _select_translation_source(
@@ -566,8 +605,7 @@ def confirm_with_candidates(
             if use_questionary:
                 try:
                     action_choices_q = [
-                        questionary.Choice("接受并写入", value="accept"),
-                        questionary.Choice("接受并写入（去除前导非歌词信息）", value="strip_leading"),
+                        questionary.Choice("接受并写入（可选去除前导非歌词信息）", value="strip_leading"),
                         questionary.Choice("选择翻译来源合并", value="merge_translation"),
                     ]
                     if spl_has_translation:
@@ -594,8 +632,7 @@ def confirm_with_candidates(
                     continue
             else:
                 action_choices = [
-                    ("接受并写入", "accept"),
-                    ("接受并写入（去除前导非歌词信息）", "strip_leading"),
+                    ("接受并写入（可选去除前导非歌词信息）", "strip_leading"),
                     ("选择翻译来源合并", "merge_translation"),
                 ]
                 if spl_has_translation:
@@ -610,9 +647,9 @@ def confirm_with_candidates(
                 ])
                 action = _simple_select("操作：", action_choices)
                 if action is None:
-                    # 无法交互，默认接受
-                    console.print("[dim]无法交互，自动接受[/]")
-                    action = "accept"
+                    # 无法交互，默认走接受流程（含前导非歌词检查）
+                    console.print("[dim]无法交互，自动进入接受流程[/]")
+                    action = "strip_leading"
 
             if action is None or action == "quit":
                 raise SystemExit(0)
@@ -642,7 +679,10 @@ def confirm_with_candidates(
                 stripped = _strip_leading_interactive(spl)
                 if stripped is None:
                     continue  # 用户取消，回到操作循环
-                return stripped  # 去除后写入
+                cleaned, removed = _drop_redundant_translation(stripped)
+                if removed:
+                    console.print(f"[dim]已移除 {removed} 行与原文完全相同的冗余翻译[/]")
+                return cleaned  # 去除后写入
             if action == "edit":
                 edited = _open_editor(spl)
                 return edited if edited.strip() else None
