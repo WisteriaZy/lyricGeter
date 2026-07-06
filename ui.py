@@ -25,9 +25,26 @@ _FORMAT_LABEL = {
     LyricFormat.PLAIN: "[yellow]纯文本[/]",
 }
 _TIMESTAMP_LINE_RE = re.compile(r"^\s*\[\d{1,3}:\d{1,2}[.:]\d{1,6}\]")
+# 匹配行内的 [] 与 <> 时间戳，高亮用
+_TS_SPAN_RE = re.compile(r"(\[\d{1,3}:\d{1,2}[.:]\d{1,6}\]|<\d{1,3}:\d{1,2}[.:]\d{1,6}>)")
 MIN_LYRIC_LINES = 5
 CLEAR_LYRICS = "__CLEAR_LYRICS__"
 SEARCH_AGAIN = "__SEARCH_AGAIN__"
+
+
+def _append_line_colored(text: Text, line: str, *, default_style: str = "") -> None:
+    """把一行歌词追加到 Text，高亮所有 [] 与 <> 时间戳。
+
+    default_style 仅应用于非时间戳文本（用于 diff 视图整行变红等场景）。
+    """
+    pos = 0
+    for m in _TS_SPAN_RE.finditer(line):
+        if m.start() > pos:
+            text.append(line[pos:m.start()], style=default_style)
+        text.append(m.group(1), style="dim cyan" if not default_style else default_style)
+        pos = m.end()
+    if pos < len(line):
+        text.append(line[pos:], style=default_style)
 
 
 def _format_duration(duration_ms: int) -> str:
@@ -149,17 +166,7 @@ def _render_preview(spl: str, title: str, artist: str, result: LyricResult) -> N
 
     colored = Text()
     for ln in preview_lines:
-        # 时间戳高亮
-        i = 0
-        while i < len(ln):
-            if ln[i] == "[":
-                end = ln.find("]", i)
-                if end != -1:
-                    colored.append(ln[i : end + 1], style="dim cyan")
-                    i = end + 1
-                    continue
-            colored.append(ln[i])
-            i += 1
+        _append_line_colored(colored, ln)
         colored.append("\n")
 
     console.print(Panel(colored, title=header, border_style="blue", padding=(0, 1)))
@@ -205,6 +212,211 @@ def _strip_translation_from_spl(spl: str) -> str:
         line for line in spl.splitlines()
         if line.strip() and _line_has_timestamp(line.strip())
     )
+
+
+# 前导非歌词信息识别
+# 这些关键词若出现在一行文本中（且回收后正文长度较短），认定其为元数据而非歌词
+_METADATA_KEYWORDS = (
+    "作词", "作曲", "词作者", "曲作者",
+    "编曲", "编配", "混音", "混响", "制作", "制作人",
+    "统筹", "企划", "出品", "发行", "出版",
+    "OP", "SP", "版权", "特别鸣谢",
+    "录音", "母带", "和声", "和声编写", "和声设计",
+    "Executive Producer", "Producer", "Arranger",
+    "Engineer", "Mixed", "Mastering", "Mastered",
+    "封面", "摄影", "海报", "插画", "裝帧",
+    "MV", "导演", "剪辑", "后期",
+    "lyricist", "composer",
+    # 英文常见写法
+    "Composed", "Composed by", "Written by", "Lyrics by",
+    "Vocals by", "Vocal by", "Sung by", "Performed by",
+    "Guitar by", "Bass by", "Drums by", "Keyboard by",
+    "Strings by", "Rap by", "Arranged by",
+    "Music by", "Words by", "Text by",
+)
+_PURE_MUSIC_RE = re.compile(r"纯音乐.*请欣赏")
+# SPL 内时间戳/延迟标记（00:01.00）用于剥离重构正文以判断是否元数据
+_INLINE_TS_RE = re.compile(r"[\[<]\d+:\d{1,2}[.:]\d{1,6}[>\]]")
+
+
+def _is_header_line(text: str) -> bool:
+    """判断单行是否为歌词前的「非歌词」内容。
+
+    包含：空行、注释/分隔行（//、#、--）、元数据关键词行、
+    纯音乐提示、以及以冒号结尾的短身份标注行（如「演唱者：」）。
+    """
+    stripped = _INLINE_TS_RE.sub("", text).strip()
+    if not stripped:
+        return True  # 空行在头部块里允许存在
+    # 注释 / 分隔行
+    if stripped.startswith("//") or stripped.startswith("#"):
+        return True
+    if stripped in ("--", "---"):
+        return True
+    if _PURE_MUSIC_RE.search(stripped):
+        return True
+    if len(stripped) > 80:
+        return False
+    if any(kw in stripped for kw in _METADATA_KEYWORDS):
+        return True
+    # 中文以冒号结尾的短身份标注行（如「演唱者：」「Vocals：」）
+    if stripped.endswith(("：", ":")) and len(stripped) < 25:
+        return True
+    return False
+
+
+def _detect_leading_non_lyric(lines: list[str]) -> int:
+    """返回从开头连续的非歌词行数，作为交互式去除的初始建议。
+
+    会进行一次前瞻：若开头某行本身不判为非歌词，但紧随其后又有非歌词行
+    （如标题行后面跟着 // 注释），把中间这个疑似标题行一并计入。
+    """
+    n = 0
+    i = 0
+    while i < len(lines):
+        text = lines[i].strip()
+        if _is_header_line(text):
+            n += 1
+            i += 1
+            continue
+        # 若仍在前 3 行内，且后面几行里有非歌词行，
+        # 认为这个是被定位为标题的歌词行，一并去除
+        if i < 3:
+            ahead = [lines[j].strip() for j in range(i + 1, min(i + 4, len(lines)))]
+            ahead_nonempty = [t for t in ahead if t]
+            if ahead_nonempty and _is_header_line(ahead_nonempty[0]):
+                n += 1
+                i += 1
+                continue
+        break
+    return n
+
+
+def _render_strip_frame(lines: list[str], n: int, detected_n: int, n_total: int) -> None:
+    """用 rich 渲染一帧去除预览，高亮时间戳、删除行全红。"""
+    frame = Text()
+    frame.append("智能去除前导非歌词信息\n", style="bold cyan")
+    frame.append("↑ 减少  ↓ 增加 删除行数  |  Enter 确认写入  |  Esc 取消\n\n", style="dim")
+    max_preview = 40
+    for i, line in enumerate(lines):
+        if i >= max_preview:
+            frame.append(f"… 共 {n_total} 行，仅显示前 {max_preview} 行\n", style="dim")
+            break
+        if i < n:
+            frame.append(f"- {i + 1:4d}| ", style="red")
+            _append_line_colored(frame, line, default_style="red")
+            frame.append("\n")
+        else:
+            frame.append(f"  {i + 1:4d}| ", style="dim")
+            _append_line_colored(frame, line)
+            frame.append("\n")
+    frame.append("\n")
+    status = f"将删除前 {n} 行，保留 {n_total - n} 行"
+    if n != detected_n:
+        status += f"  （自动检测 {detected_n} 行）"
+    frame.append(status, style="bold yellow")
+    console.print(frame)
+
+
+def _strip_leading_interactive(spl: str) -> str | None:
+    """交互式去除前导非歌词信息。
+
+    Windows 上用 msvcrt 读单个键静，上下方向键调整删除范围，Enter 确认，Esc 取消。
+    不依赖 prompt_toolkit 全屏应用，避免在 questionary 会话中嵌套启动出错。
+
+    返回值：
+    - str：用户确认后的 SPL（前 N 行已删除；N 可能为 0，等于原样）
+    - None：用户取消，调用方应保留原 spl 不变
+    """
+    lines = spl.splitlines()
+    n_total = len(lines)
+    if n_total == 0:
+        return spl
+    detected_n = _detect_leading_non_lyric(lines)
+    n = detected_n
+
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return _strip_leading_simple(spl)
+
+    try:
+        import msvcrt
+    except ImportError:
+        return _strip_leading_simple(spl)
+
+    try:
+        while True:
+            console.clear()
+            _render_strip_frame(lines, n, detected_n, n_total)
+            try:
+                ch = msvcrt.getch()
+            except (OSError, KeyboardInterrupt):
+                return None
+            if ch in (b"\r", b"\n"):
+                return "\n".join(lines[n:])
+            if ch in (b"\x1b", b"\x03"):
+                return None  # Esc / Ctrl-C 视为取消
+            if ch in (b"\xe0", b"\x00"):
+                try:
+                    ch2 = msvcrt.getch()
+                except (OSError, KeyboardInterrupt):
+                    return None
+                if ch2 == b"H" and n > 0:        # ↑
+                    n -= 1
+                elif ch2 == b"P" and n < n_total:  # ↓
+                    n += 1
+                # 其余特殊键忽略
+            # 其余普通键忽略；只接受方向键 / Enter / Esc / Ctrl-C
+    except Exception:
+        # 任何意外都回退到简单模式，避免微交互袉住主流程
+        return _strip_leading_simple(spl)
+
+
+def _strip_leading_simple(spl: str) -> str | None:
+    """非交互式回退：基于自动检测或文本输入。"""
+    lines = spl.splitlines()
+    n_total = len(lines)
+    if n_total == 0:
+        return spl
+    detected_n = _detect_leading_non_lyric(lines)
+
+    console.print("\n[bold cyan]智能去除前导非歌词信息[/]")
+    console.print(f"[dim]自动检测到前 {detected_n} 行疑似非歌词信息[/]\n")
+
+    frame = Text()
+    for i, line in enumerate(lines[:25]):
+        if i < detected_n:
+            frame.append(f"~ {i + 1:3d}| ", style="red")
+            _append_line_colored(frame, line, default_style="red")
+            frame.append("\n")
+        else:
+            frame.append(f"  {i + 1:3d}| ", style="dim")
+            _append_line_colored(frame, line)
+            frame.append("\n")
+    if n_total > 25:
+        frame.append(f"… 共 {n_total} 行\n", style="dim")
+    console.print(frame)
+
+    try:
+        raw = input(
+            f"\n删除前几行？(0-{n_total}, 回车=接受自动检测 {detected_n}, n=取消): "
+        ).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+    if not raw:
+        return "\n".join(lines[detected_n:])
+    if raw.lower() in ("n", "q", "cancel", "no"):
+        return None
+    try:
+        n = int(raw)
+    except ValueError:
+        console.print("[yellow]输入无效，已取消[/]")
+        return None
+    if 0 <= n <= n_total:
+        return "\n".join(lines[n:])
+    console.print("[yellow]行数超出范围，已取消[/]")
+    return None
+
 
 
 def _select_translation_source(
@@ -355,6 +567,7 @@ def confirm_with_candidates(
                 try:
                     action_choices_q = [
                         questionary.Choice("接受并写入", value="accept"),
+                        questionary.Choice("接受并写入（去除前导非歌词信息）", value="strip_leading"),
                         questionary.Choice("选择翻译来源合并", value="merge_translation"),
                     ]
                     if spl_has_translation:
@@ -382,6 +595,7 @@ def confirm_with_candidates(
             else:
                 action_choices = [
                     ("接受并写入", "accept"),
+                    ("接受并写入（去除前导非歌词信息）", "strip_leading"),
                     ("选择翻译来源合并", "merge_translation"),
                 ]
                 if spl_has_translation:
@@ -424,6 +638,11 @@ def confirm_with_candidates(
                 verdict = verify_translation_alignment(spl)
                 console.print(Panel(verdict, title="LLM 翻译对齐校验", border_style="magenta"))
                 continue  # 校验只看不动，回到操作循环
+            if action == "strip_leading":
+                stripped = _strip_leading_interactive(spl)
+                if stripped is None:
+                    continue  # 用户取消，回到操作循环
+                return stripped  # 去除后写入
             if action == "edit":
                 edited = _open_editor(spl)
                 return edited if edited.strip() else None

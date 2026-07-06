@@ -8,13 +8,13 @@
 ## 功能特性
 
 - **多源逐字歌词**：网易云音乐（YRC）、酷狗音乐（KRC）、QQ 音乐（QRC）、AMLL TTML 数据库，四平台互补
-- **原生 API**：直接调用平台接口，支持相似度过滤和翻译/罗马音获取
+- **原生 API**：直接调用平台接口，支持相似度过滤和翻译获取
 - **SPL 格式**：输出符合 [Salt Player Lyrics 规范](https://moriafly.com/standards/spl.html)，支持逐字、翻译、延迟逐字
 - **交互确认**：写入前彩色预览，可手动编辑、跨源合并翻译、再次搜索选歌
 - **自动模式**：按权重自动选择最优结果（格式优先 > 相似度），适合批量处理
 - **安全备份**：写入前自动备份原有歌词到 `.lrc.bak`
 - **断点续传**：目录批处理时自动保存进度，随时退出，下次运行继续剩余文件
-- **多格式音频**：MP3、FLAC、Ogg 等主流格式
+- **多格式音频**：MP3、FLAC、Ogg 等主流格式(目前只测试过mp3?)
 
 ## 安装
 
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 # 处理单个文件（交互模式）
 python main.py song.mp3
 
-# 处理整个目录
+# 处理整个目录(推荐)
 python main.py ~/Music/
 
 # 自动模式（跳过确认，按权重选择最优结果）
@@ -163,8 +163,6 @@ lyricGeter/
 ├── writer.py            # 写入音频标签
 ├── state.py             # 断点续传状态管理
 ├── ui.py                # 终端交互界面
-└── example/
-    └── lyricLoader.ts   # TypeScript 参考实现
 ```
 
 ## 已知限制
