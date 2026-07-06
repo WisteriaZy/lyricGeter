@@ -379,8 +379,9 @@ def _ttml_to_spl(lines: list) -> str:
         # 行结束时间戳
         # 优先用最后一字的 end（原始数据更精确，间奏不会被压缩到下一行）
         # 否则回退到下一行 start（隐式结尾语义）
-        if line.words and line.words[-1].end > line.words[-1].start:
-            parts.append(_ms_to_stamp(line.words[-1].end))
+        _last = line.words[-1] if line.words else None
+        if _last and _last.end is not None and _last.start is not None and _last.end > _last.start:
+            parts.append(_ms_to_stamp(_last.end))
         elif i + 1 < len(lines):
             parts.append(_ms_to_stamp(lines[i + 1].start))
         else:
@@ -431,8 +432,9 @@ def _qrc_to_spl(orig_lines: list, trans_lines: list = None, roma_lines: list = N
         # 行结束时间戳：用 []
         # 优先用最后一字的 end（原始数据更精确，间奏不会被压缩到下一行）
         # 否则回退到下一行 start（隐式结尾语义）
-        if line.words and line.words[-1].end > line.words[-1].start:
-            parts.append(_ms_to_stamp(line.words[-1].end))
+        _last = line.words[-1] if line.words else None
+        if _last and _last.end is not None and _last.start is not None and _last.end > _last.start:
+            parts.append(_ms_to_stamp(_last.end))
         elif i + 1 < len(orig_lines):
             parts.append(_ms_to_stamp(orig_lines[i + 1].start))
         else:
@@ -486,8 +488,9 @@ def _krc_to_spl(lyrics_data: dict, has_translation: bool = False) -> str:
         # 行结束时间戳：用 []
         # 优先用最后一字的 end（原始数据更精确，间奏不会被压缩到下一行）
         # 否则回退到下一行 start（隐式结尾语义）
-        if line.words and line.words[-1].end > line.words[-1].start:
-            parts.append(_ms_to_stamp(line.words[-1].end))
+        _last = line.words[-1] if line.words else None
+        if _last and _last.end is not None and _last.start is not None and _last.end > _last.start:
+            parts.append(_ms_to_stamp(_last.end))
         elif i + 1 < len(orig_lines):
             parts.append(_ms_to_stamp(orig_lines[i + 1].start))
         else:
