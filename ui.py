@@ -297,7 +297,7 @@ def _render_strip_frame(lines: list[str], n: int, detected_n: int, n_total: int)
     frame = Text()
     frame.append("智能去除前导非歌词信息\n", style="bold cyan")
     frame.append("↑ 减少  ↓ 增加 删除行数  |  Enter 确认写入  |  Esc 取消\n\n", style="dim")
-    max_preview = 40
+    max_preview = 20
     for i, line in enumerate(lines):
         if i >= max_preview:
             frame.append(f"… 共 {n_total} 行，仅显示前 {max_preview} 行\n", style="dim")
