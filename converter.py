@@ -265,8 +265,16 @@ def _netease_word_to_spl(content: str) -> str:
             parts.append(word_text)
         
         # 行结束时间戳：用 []
+        # 优先用最后一字的 end（word_time + word_duration，原始数据更精确）
+        # 否则回退到下一行 start（隐式结尾语义）
+        if line.words:
+            last_time, last_dur, _ = line.words[-1]
+            last_end = last_time + last_dur
+            if last_end > last_time:
+                parts.append(_ms_to_stamp(last_end))
+                out_lines.append(''.join(parts))
+                continue
         if i + 1 < len(lines):
-            # 用下一行开始时间作为结束
             parts.append(_ms_to_stamp(lines[i + 1].start))
         else:
             # 最后一行，用行起始+持续时间
@@ -369,7 +377,11 @@ def _ttml_to_spl(lines: list) -> str:
             continue
 
         # 行结束时间戳
-        if i + 1 < len(lines):
+        # 优先用最后一字的 end（原始数据更精确，间奏不会被压缩到下一行）
+        # 否则回退到下一行 start（隐式结尾语义）
+        if line.words and line.words[-1].end > line.words[-1].start:
+            parts.append(_ms_to_stamp(line.words[-1].end))
+        elif i + 1 < len(lines):
             parts.append(_ms_to_stamp(lines[i + 1].start))
         else:
             parts.append(_ms_to_stamp(line.end))
@@ -417,7 +429,11 @@ def _qrc_to_spl(orig_lines: list, trans_lines: list = None, roma_lines: list = N
                 parts.append(line.words[0].text)
         
         # 行结束时间戳：用 []
-        if i + 1 < len(orig_lines):
+        # 优先用最后一字的 end（原始数据更精确，间奏不会被压缩到下一行）
+        # 否则回退到下一行 start（隐式结尾语义）
+        if line.words and line.words[-1].end > line.words[-1].start:
+            parts.append(_ms_to_stamp(line.words[-1].end))
+        elif i + 1 < len(orig_lines):
             parts.append(_ms_to_stamp(orig_lines[i + 1].start))
         else:
             parts.append(_ms_to_stamp(line.end))
@@ -468,11 +484,13 @@ def _krc_to_spl(lyrics_data: dict, has_translation: bool = False) -> str:
             parts.append(word.text)
         
         # 行结束时间戳：用 []
-        if i + 1 < len(orig_lines):
-            # 用下一行开始时间作为结束
+        # 优先用最后一字的 end（原始数据更精确，间奏不会被压缩到下一行）
+        # 否则回退到下一行 start（隐式结尾语义）
+        if line.words and line.words[-1].end > line.words[-1].start:
+            parts.append(_ms_to_stamp(line.words[-1].end))
+        elif i + 1 < len(orig_lines):
             parts.append(_ms_to_stamp(orig_lines[i + 1].start))
         else:
-            # 最后一行，用行结束时间
             parts.append(_ms_to_stamp(line.end))
         
         out_lines.append(''.join(parts))
